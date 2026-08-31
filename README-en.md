@@ -31,6 +31,12 @@ That's it — everything after installation is handled automatically by the agen
 
 ## Usage
 
+At session wrap-up, tell the agent:
+
+```
+retro
+```
+
 Variants like "distill this session" or "note today's pitfalls" also work. Say nothing and the agent will still proactively suggest a retro after a substantial task — a tough bug fix, an environment setup, a long debugging session. When there is nothing worth recording, it says so instead of padding.
 
 ### What the Agent Does Behind the Scenes

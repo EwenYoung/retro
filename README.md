@@ -31,6 +31,12 @@ git clone https://github.com/EwenYoung/retro.git ~/.agents/skills/retro
 
 ## 使用方法
 
+会话收尾时对 agent 说一句：
+
+```
+沉淀一下
+```
+
 也可以说「复盘」「总结经验」「记一下这次的坑」，或者什么都不说——agent 完成一场硬仗（修了个棘手 bug、搭好环境、长调试收尾）后会主动建议沉淀；没什么可记时它会直接说「本次没有值得沉淀的经验」，不硬凑。
 
 ### agent 背后的工作流程
