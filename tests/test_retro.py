@@ -153,7 +153,7 @@ def test_d4_log_entry_line_missing_id_warns(tmp_path, capsys):
 
 
 def test_d6_long_rule_line_warns(tmp_path, capsys):
-    """AGENTS.md 规则行 strip 后 >100 字符 → check 有 warning。"""
+    """AGENTS.md 规则行 strip 后 >120 字符 → check 有 warning。"""
     root = tmp_path
     log = ["## s1 段落标题\n\n> entry: %s\n" % EID]
     write_log(root, log)
@@ -166,7 +166,7 @@ def test_d6_long_rule_line_warns(tmp_path, capsys):
 
     rc, out = capture(root, capsys, "check")
     assert rc == 0
-    assert "超过 100 字符" in out
+    assert "超过 120 字符" in out
 
 
 # ---------------------------------------------------------------- D8

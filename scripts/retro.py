@@ -887,13 +887,13 @@ def _cmd_check(root, write_status=True, quiet=False):
     for d in drifts:
         warnings.append(d)
 
-    # D6：AGENTS.md 规则行长度校验（strip 后全文 >100 字符 → warning）
+    # D6：AGENTS.md 规则行长度校验（strip 后全文 >120 字符 → warning；上限含 scope 拼接）
     agents_status, agents_rules = _read_agents_rules(root)
     if agents_status is None:
         for _rid, line in agents_rules:
             stripped = line.strip()
-            if len(stripped) > 100:
-                warnings.append(("reconcile", "AGENTS.md 规则行超过 100 字符（%d 字符）: %s…"
+            if len(stripped) > 120:
+                warnings.append(("reconcile", "AGENTS.md 规则行超过 120 字符（%d 字符）: %s…"
                                   % (len(stripped), stripped[:60])))
 
     # 状态转换直接写回（只有状态字段变化，原子写）
