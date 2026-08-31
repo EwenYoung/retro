@@ -482,3 +482,72 @@ def test_audit_exit_code_on_check_errors(tmp_path, capsys):
     assert run(root, "index") == 0
     rc, _out = capture(root, capsys, "audit")
     assert rc == 0
+
+
+# ---------------------------------------------------------------- 审计轮（落账与驳回记忆）
+
+def test_audit_close_landing_and_dismissed_validation(tmp_path, capsys):
+    """--close 落账一行合法 JSON、stats 正确；--dismissed 指向不存在 id → 拒绝退出 1。"""
+    root = tmp_path
+    log = ["## s1 段落标题\n\n> entry: %s\n" % EID]
+    write_log(root, log)
+    fm = base_fm()
+    fm["escalated"] = True
+    write_entry(root, fm, "结论句。\n")
+    write_agents(root, ["测试结论标题 [%s]" % EID])
+    assert run(root, "index") == 0
+
+    rc, out = capture(root, capsys, "audit", "--close", "本轮总结文本")
+    assert rc == 0
+    assert "落账成功" in out
+    assert "0 条" in out  # 本轮驳回数
+    path = root / ".retro" / "audit.log.jsonl"
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    rec = json.loads(lines[0])
+    assert rec["ts"]
+    assert rec["stats"] == {"entries": 1, "rules": 1, "escalated": 1}
+    assert rec["summary"] == "本轮总结文本"
+    assert rec["dismissed"] == []
+
+    # --dismissed 指向不存在的 id → 拒绝，不追加记录
+    rc, out = capture(root, capsys, "audit", "--close", "x", "--dismissed", "20260824-999")
+    assert rc == 1
+    assert "存在未知条目 id" in out
+    assert len(path.read_text(encoding="utf-8").splitlines()) == 1
+
+    # --dismissed 不与 --close 搭配 → 用法错误
+    assert run(root, "audit", "--dismissed", EID) == 2
+
+
+def test_audit_dismissed_silent_then_resurface(tmp_path, capsys):
+    """驳回记忆：7 天内静默剔除；≥7 天重新浮出并标注请复查。"""
+    root = tmp_path
+    log = ["## s1 段落标题\n\n> entry: %s\n" % EID]
+    write_log(root, log)
+    fm = base_fm()
+    fm["escalated"] = True
+    write_entry(root, fm, "结论句。\n")
+    write_agents(root, ["测试结论标题 [%s]" % EID])
+    assert run(root, "index") == 0
+
+    # 落账本轮审计并驳回 EID
+    assert run(root, "audit", "--close", "总结x", "--dismissed", EID) == 0
+
+    # 立即再审计：降级候选中 EID 被静默剔除
+    rc, out = capture(root, capsys, "audit")
+    assert rc == 0
+    seg3 = out.split("③ 降级候选")[1].split("④ 失效候选")[0]
+    assert "[%s]" % EID not in seg3
+
+    # 把该轮 ts 改成 8 天前 → 重新浮出，标注请复查
+    path = root / ".retro" / "audit.log.jsonl"
+    rec = json.loads(path.read_text(encoding="utf-8").splitlines()[0])
+    rec["ts"] = (datetime.date.today() - datetime.timedelta(days=8)).isoformat() + "T12:00:00"
+    path.write_text(json.dumps(rec, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    rc, out = capture(root, capsys, "audit")
+    assert rc == 0
+    seg3 = out.split("③ 降级候选")[1].split("④ 失效候选")[0]
+    assert "[%s]" % EID in seg3
+    assert "请复查" in seg3

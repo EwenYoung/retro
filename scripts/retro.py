@@ -1451,6 +1451,24 @@ def _read_dismissal_memory(records):
     return mem
 
 
+def _dismiss_info(eid, dismiss_mem, today):
+    """驳回记忆查询。返回 (silent:bool, marker:str)。
+
+    silent=True → 该 id 处于静默期，应从候选剔除；
+    marker 非空 → 驳回已超期，照常输出并在行尾标注请复查。
+    """
+    ts = dismiss_mem.get(eid)
+    if not ts:
+        return False, ""
+    d = _parse_date(ts)
+    if d is None:
+        return False, ""
+    days = (today - d).days
+    if days < AUDIT_INTERVAL_DAYS:
+        return True, ""
+    return False, "（历史驳回 ≥%d天，请复查）" % days
+
+
 def _escalation_logged_ids(root):
     """escalation.log.jsonl 中所有 escalate op 的 ids 并集（覆盖率分子用）。"""
     ids = set()
@@ -1473,11 +1491,22 @@ def _escalation_logged_ids(root):
     return ids
 
 
-def _cmd_audit(root):
-    """审计轮干跑：六区块只读报告。全程不写任何文件（只读通过 check 的 write_status=False 保证）。"""
+def _cmd_audit(root, summary=None, dismissed=None, close=False):
+    """审计轮：无参干跑输出六区块只读报告；--close 落账（写 audit.log.jsonl，追加式）。"""
+    if close:
+        if not summary or not summary.strip():
+            _stdout("用法错误：--close 需要本轮总结文本。")
+            return 2
+        return _cmd_audit_close(root, summary.strip(), dismissed or [])
+    if dismissed:
+        _stdout("用法错误：--dismissed 仅配合 --close 使用。")
+        return 2
+
     # 只读复用：_cmd_check(write_status=False) 内部这一次 _analyze 供六个区块共享
     errors, warnings, analysis, _updates = _cmd_check(root, write_status=False)
     today = datetime.date.today()
+    records = _read_audit_records(root)
+    dismiss_mem = _read_dismissal_memory(records)
 
     _stdout("=== audit ===")
 
@@ -1514,15 +1543,22 @@ def _cmd_audit(root):
                    if not e.get("fatal") and e["data"].get("escalated") is True and e["eid"] in rule_ids]
     demote_pool.sort(key=lambda e: (e.get("last_seen") or "", e["seen_count"],
                                     e.get("applied_count", 0)))
-    demote_top = demote_pool[:5]
+    demote_kept = []
+    for e in demote_pool:
+        silent, marker = _dismiss_info(e["eid"], dismiss_mem, today)
+        if not silent:
+            demote_kept.append((e, marker))
+    demote_top = demote_kept[:5]
     if len(rule_ids) < AUDIT_RULES_WARN_THRESHOLD:
         _stdout("规则区 %d/12，未到预警线，仅供参考" % len(rule_ids))
-    if not demote_top:
+    if not demote_pool:
         _stdout("（无降级候选：已升级且仍在规则区的条目为空）")
-    for e in demote_top:
-        _stdout("[%s] %s | last_seen=%s | seen×%s | applied×%s(ok %s)"
+    elif not demote_top:
+        _stdout("（降级候选均处于历史驳回静默期，%d 天内不重复浮出）" % AUDIT_INTERVAL_DAYS)
+    for e, marker in demote_top:
+        _stdout("[%s] %s | last_seen=%s | seen×%s | applied×%s(ok %s)%s"
                 % (e["eid"], e["data"].get("title", ""), e.get("last_seen") or "-",
-                   e["seen_count"], e.get("applied_count", 0), e.get("applied_ok", 0)))
+                   e["seen_count"], e.get("applied_count", 0), e.get("applied_ok", 0), marker))
 
     # ④ 失效候选（两档）
     _stdout("④ 失效候选")
@@ -1540,31 +1576,51 @@ def _cmd_audit(root):
                 stale_cands.append(e)
     fail_cands.sort(key=lambda e: (e.get("last_seen") or "", e["eid"]))
     stale_cands.sort(key=lambda e: (e.get("last_seen") or "", e["eid"]))
-    stale_cands = stale_cands[:5]
-    _stdout("证据档（applied_count>0 且 applied_ok==0，fail 由 count-ok 现算）:")
-    if not fail_cands:
-        _stdout("  （无）")
+    fail_kept = []
     for e in fail_cands:
-        _stdout("  [%s] %s | last_seen=%s | seen×%s | applied×%s(ok 0)"
-                % (e["eid"], e["data"].get("title", ""), e.get("last_seen") or "-",
-                   e["seen_count"], e["applied_count"]))
-    _stdout("疑似档（无 applied 数据 × seen×1 × ≥%d 天未现，供 LLM 复核）:" % AUDIT_STALE_DAYS)
-    if not stale_cands:
-        _stdout("  （无）")
+        silent, marker = _dismiss_info(e["eid"], dismiss_mem, today)
+        if not silent:
+            fail_kept.append((e, marker))
+    stale_kept = []
     for e in stale_cands:
-        _stdout("  [%s] %s | last_seen=%s | seen×%s"
-                % (e["eid"], e["data"].get("title", ""), e.get("last_seen") or "-", e["seen_count"]))
+        silent, marker = _dismiss_info(e["eid"], dismiss_mem, today)
+        if not silent:
+            stale_kept.append((e, marker))
+    stale_top = stale_kept[:5]
+    _stdout("证据档（applied_count>0 且 applied_ok==0，fail 由 count-ok 现算）:")
+    if not fail_kept:
+        _stdout("  （无）")
+    for e, marker in fail_kept:
+        _stdout("  [%s] %s | last_seen=%s | seen×%s | applied×%s(ok 0)%s"
+                % (e["eid"], e["data"].get("title", ""), e.get("last_seen") or "-",
+                   e["seen_count"], e["applied_count"], marker))
+    _stdout("疑似档（无 applied 数据 × seen×1 × ≥%d 天未现，供 LLM 复核）:" % AUDIT_STALE_DAYS)
+    if not stale_top:
+        _stdout("  （无）")
+    for e, marker in stale_top:
+        _stdout("  [%s] %s | last_seen=%s | seen×%s%s"
+                % (e["eid"], e["data"].get("title", ""), e.get("last_seen") or "-",
+                   e["seen_count"], marker))
 
     # ⑤ 重复/合并候选
     _stdout("⑤ 重复/合并候选")
-    if not analysis["dup_pairs"]:
-        _stdout("（无）")
+    pair_out = []
     for eid1, eid2, jac in analysis["dup_pairs"]:
-        _stdout("[%s] ↔ [%s] Jaccard=%.2f" % (eid1, eid2, jac))
+        silent1, marker1 = _dismiss_info(eid1, dismiss_mem, today)
+        silent2, marker2 = _dismiss_info(eid2, dismiss_mem, today)
+        if silent1 or silent2:
+            continue
+        pair_out.append((eid1, eid2, jac, marker1 or marker2))
+    if not pair_out:
+        if analysis["dup_pairs"]:
+            _stdout("（重复候选均处于历史驳回静默期，%d 天内不重复浮出）" % AUDIT_INTERVAL_DAYS)
+        else:
+            _stdout("（无）")
+    for eid1, eid2, jac, marker in pair_out:
+        _stdout("[%s] ↔ [%s] Jaccard=%.2f%s" % (eid1, eid2, jac, marker))
 
     # ⑥ 审计状态
     _stdout("⑥ 审计状态")
-    records = _read_audit_records(root)
     if not records:
         _stdout("从未审计")
     else:
@@ -1594,7 +1650,6 @@ def _cmd_audit(root):
                 % (len(rule_ids), covered, covered, len(rule_ids)))
     else:
         _stdout("escalation 覆盖: 规则区为空")
-    dismiss_mem = _read_dismissal_memory(records) if records else {}
     if dismiss_mem:
         for did, ts in sorted(dismiss_mem.items()):
             _stdout("历史驳回: %s（最近驳回 %s）" % (did, ts[:10] if ts else "-"))
@@ -1602,6 +1657,45 @@ def _cmd_audit(root):
         _stdout("历史驳回名单: （无）")
 
     return 1 if errors else 0
+
+
+def _cmd_audit_close(root, summary, dismissed):
+    """审计落账：先校验（check 0 error + dismissed id 存在），再追加一行 audit.log.jsonl。"""
+    errors, _w, analysis, _u = _cmd_check(root, write_status=False)
+    if errors:
+        _stdout("审计落账被拒绝：check 存在 %d 个 error，需先修复。详情：" % len(errors))
+        for er in errors[:20]:
+            _stdout("  [error] %s: %s" % (er[0], er[1]))
+        return 1
+    entries = analysis["entries"]
+    bad = [i for i in dismissed if i not in entries or entries[i].get("fatal")]
+    if bad:
+        _stdout("审计落账被拒绝：--dismissed 存在未知条目 id: %s" % ", ".join(bad))
+        return 1
+    n_entries = sum(1 for e in entries.values() if not e.get("fatal"))
+    _s, rules = _read_agents_rules(root)
+    n_rules = len(rules)
+    n_esc = sum(1 for e in entries.values() if not e.get("fatal") and e["data"].get("escalated") is True)
+
+    audit_path = os.path.join(root, FILE_AUDIT)
+    os.makedirs(os.path.dirname(audit_path), exist_ok=True)
+    payload = {
+        "ts": _now().isoformat(timespec="seconds"),
+        "stats": {"entries": n_entries, "rules": n_rules, "escalated": n_esc},
+        "summary": summary,
+        "dismissed": dismissed,
+    }
+    with open(audit_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+    next_date = datetime.date.today() + datetime.timedelta(days=AUDIT_INTERVAL_DAYS)
+    _stdout("审计落账成功。")
+    if dismissed:
+        _stdout("本轮驳回 %d 条: %s" % (len(dismissed), ", ".join(dismissed)))
+    else:
+        _stdout("本轮驳回 0 条。")
+    _stdout("下轮建议审计日期: %s（%d 天后）" % (next_date.isoformat(), AUDIT_INTERVAL_DAYS))
+    return 0
 
 
 # ---------------------------------------------------------------- 入口
@@ -1624,7 +1718,9 @@ def _build_parser():
     p.add_argument("--force", action="store_true", help="绕过 seen_count≥2 门槛（仅限迁移/紧急场景，审计记录 force:true）")
     p.add_argument("--demote", nargs="+", metavar="ID", help="将指定条目从 AGENTS.md 规则降级")
     subs.add_parser("reconcile", help="检查 AGENTS.md 与条目 escalated 状态的漂移")
-    subs.add_parser("audit", help="审计轮：六区块只读报告（健康/升级/降级/失效/合并候选/审计状态）")
+    p = subs.add_parser("audit", help="审计轮：六区块只读报告（干跑）/ --close 落账")
+    p.add_argument("--close", metavar="SUMMARY", help="落账本轮审计总结（与干跑互斥，必填总结文本）")
+    p.add_argument("--dismissed", metavar="ID1,ID2", help="本轮驳回的条目 id，逗号分隔（仅配合 --close）")
     return parser
 
 
@@ -1664,7 +1760,11 @@ def main(argv=None):
         if sub == "reconcile":
             return _cmd_reconcile(root)
         if sub == "audit":
-            return _cmd_audit(root)
+            dismissed_list = None
+            if args.dismissed:
+                dismissed_list = [s.strip() for s in args.dismissed.split(",") if s.strip()]
+            return _cmd_audit(root, summary=args.close, dismissed=dismissed_list,
+                              close=args.close is not None)
         _stdout("未知子命令: %s" % sub)
         return 2
     except RetroError as e:
