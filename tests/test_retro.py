@@ -5,6 +5,7 @@
 经 retro.main() 做集成调用。
 """
 
+import datetime
 import importlib.util
 import json
 import os
@@ -31,6 +32,14 @@ def write_log(root, sections):
     log_dir.mkdir(parents=True, exist_ok=True)
     content = "# %s 会话摘录\n\n" % DATE + "\n\n".join(sections) + "\n"
     (log_dir / ("%s.md" % DATE)).write_text(content, encoding="utf-8")
+
+
+def write_log_at(root, date_str, sections):
+    """按指定日期写 log 文件（write_log 固定用模块级 DATE）。"""
+    log_dir = root / ".retro" / "log"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    content = "# %s 会话摘录\n\n" % date_str + "\n\n".join(sections) + "\n"
+    (log_dir / ("%s.md" % date_str)).write_text(content, encoding="utf-8")
 
 
 def write_entry(root, fm, body):
@@ -316,3 +325,160 @@ def test_scope_over_60_chars_warns(tmp_path, capsys):
     rc, out = capture(root, capsys, "check")
     assert rc == 0
     assert "scope 超过 60 字符 (61)" in out
+
+
+# ---------------------------------------------------------------- 审计轮（报告）
+
+def test_audit_six_blocks_empty_repo(tmp_path, capsys):
+    """空库（无 log/entries/AGENTS.md）跑 audit：不崩、六区块标题齐全、退出码 0。"""
+    root = tmp_path
+    assert run(root, "index") == 0  # 生成空 INDEX.md，check 才 0 error
+    rc, out = capture(root, capsys, "audit")
+    assert rc == 0
+    for title in ("① 健康检查", "② 升级候选", "③ 降级候选",
+                  "④ 失效候选", "⑤ 重复/合并候选", "⑥ 审计状态"):
+        assert title in out
+    assert "从未审计" in out
+
+
+def test_audit_rule_blank_drift_detected(tmp_path, capsys):
+    """标记区内「规则行→空行→规则行」被计为格式漂移。"""
+    root = tmp_path
+    log = [
+        "## s1 段落标题\n\n> entry: %s\n" % EID,
+        "## s2 段落标题\n\n> entry: 20260824-002\n",
+    ]
+    write_log(root, log)
+    fm = base_fm()
+    fm["escalated"] = True
+    write_entry(root, fm, "结论句。\n")
+    fm2 = base_fm()
+    fm2["id"] = "20260824-002"
+    fm2["title"] = "第二个条目结论标题"
+    fm2["escalated"] = True
+    write_entry(root, fm2, "结论句。\n")
+    # 标记区内空行分隔规则行 → 漂移 1 处
+    content = ("# AGENTS.md\n\n## 经验教训\n\n<!-- retro-managed-start -->\n"
+               "\n- 规则一 [%s]\n\n- 规则二 [20260824-002]\n\n"
+               "<!-- retro-managed-end -->\n" % EID)
+    (root / "AGENTS.md").write_text(content, encoding="utf-8")
+    assert run(root, "index") == 0
+
+    rc, out = capture(root, capsys, "audit")
+    assert rc == 0
+    assert "规则区格式漂移" in out
+    assert "1 处" in out
+
+
+def test_audit_rules_warn_threshold(tmp_path, capsys):
+    """规则区条数 ≥ AUDIT_RULES_WARN_THRESHOLD → 输出预警行。"""
+    root = tmp_path
+    assert run(root, "index") == 0
+    rule_lines = ["- 规则%02d [20260101-%03d]" % (i + 1, i + 1) for i in range(10)]
+    content = ("# AGENTS.md\n\n## 经验教训\n\n<!-- retro-managed-start -->\n"
+               + "\n".join(rule_lines) + "\n<!-- retro-managed-end -->\n")
+    (root / "AGENTS.md").write_text(content, encoding="utf-8")
+
+    rc, out = capture(root, capsys, "audit")
+    assert rc == 0
+    assert "⚠ 规则区 10/12，剩余 2 空位，接近上限" in out
+
+
+def test_audit_demote_candidates_sorted(tmp_path, capsys):
+    """降级候选按 (last_seen 升序, seen_count 升序, applied_count 升序) 输出。"""
+    root = tmp_path
+    d_old = (datetime.date.today() - datetime.timedelta(days=40)).strftime("%Y-%m-%d")
+    d_recent = (datetime.date.today() - datetime.timedelta(days=20)).strftime("%Y-%m-%d")
+    ids = ["20260801-001", "20260810-001", "20260810-002", "20260810-003"]
+    specs = [
+        (ids[0], "最老的降级候选条目", ["log/%s.md#s1" % d_old], 1, 0),
+        (ids[1], "稍新的降级候选条目", ["log/%s.md#s1" % d_recent], 1, 0),
+        (ids[2], "同日期多次出现条目", ["log/%s.md#s2" % d_recent], 2, 0),
+        (ids[3], "同日期被应用条目", ["log/%s.md#s3" % d_recent], 2, 1),
+    ]
+    for eid, title, raw_ref, _seen, _applied in specs:
+        write_entry(root, {"id": eid, "title": title, "tags": ["domain"],
+                           "confidence": "high", "raw_ref": raw_ref,
+                           "supersedes": None, "escalated": True}, "结论句。\n")
+    write_log_at(root, d_old, ["## s1 段落标题\n\n> entry: %s\n" % ids[0]])
+    write_log_at(root, d_recent, [
+        "## s1 段落标题\n\n> entry: %s\n" % ids[1],
+        "## s2 段落标题\n\n> entry: %s\n> seen-again: %s\n" % (ids[2], ids[2]),
+        "## s3 段落标题\n\n> entry: %s\n> seen-again: %s\n> applied: %s ok\n" % (ids[3], ids[3], ids[3]),
+    ])
+    rule_lines = ["- 规则%s [%s]" % (eid[-3:], eid) for eid in ids]
+    content = ("# AGENTS.md\n\n## 经验教训\n\n<!-- retro-managed-start -->\n"
+               + "\n".join(rule_lines) + "\n<!-- retro-managed-end -->\n")
+    (root / "AGENTS.md").write_text(content, encoding="utf-8")
+    assert run(root, "index") == 0
+
+    rc, out = capture(root, capsys, "audit")
+    assert rc == 0
+    seg = out.split("③ 降级候选")[1].split("④ 失效候选")[0]
+    order = [i for i in ids if ("[%s]" % i) in seg]
+    assert order == ids
+    assert "last_seen=%s | seen×1 | applied×0(ok 0)" % d_old in seg
+
+
+def test_audit_stale_and_fail_only_candidates(tmp_path, capsys):
+    """失效候选两档：applied 全 fail → 证据档；无 applied + 老 last_seen + seen×1 → 疑似档。"""
+    root = tmp_path
+    d_old = (datetime.date.today() - datetime.timedelta(days=40)).strftime("%Y-%m-%d")
+    write_log_at(root, d_old, ["## s1 段落标题\n\n> entry: 20260701-001\n"])
+    write_log(root, ["## s1 段落标题\n\n> entry: %s\n> applied: %s fail\n> applied: %s fail\n"
+                     % (EID, EID, EID)])
+    write_entry(root, base_fm(), "结论句。\n")
+    fm = base_fm()
+    fm["id"] = "20260701-001"
+    fm["title"] = "很久未现的疑似失效条目"
+    fm["raw_ref"] = ["log/%s.md#s1" % d_old]
+    write_entry(root, fm, "结论句。\n")
+    write_agents(root)
+    assert run(root, "index") == 0
+
+    rc, out = capture(root, capsys, "audit")
+    assert rc == 0
+    ev = out.split("证据档")[1].split("疑似档")[0]
+    assert "[%s]" % EID in ev
+    assert "applied×2(ok 0)" in ev
+    sus = out.split("疑似档")[1].split("⑤ 重复/合并候选")[0]
+    assert "[20260701-001]" in sus
+    assert "供 LLM 复核" in sus
+
+
+def test_audit_read_only_no_writes(tmp_path, capsys):
+    """只读纪律：audit 干跑不改 entries / INDEX.md / AGENTS.md。"""
+    root = tmp_path
+    log = ["## s1 段落标题\n\n> entry: %s\n" % EID]
+    write_log(root, log)
+    write_entry(root, base_fm(), "结论句。\n\n- **症状**：x\n")
+    write_agents(root, ["测试结论标题 [%s]" % EID])
+    assert run(root, "index") == 0
+
+    targets = [root / ".retro" / "entries" / ("%s.md" % EID),
+               root / ".retro" / "INDEX.md",
+               root / "AGENTS.md"]
+    before = [p.read_text(encoding="utf-8") for p in targets]
+    rc, _out = capture(root, capsys, "audit")
+    assert rc == 0
+    after = [p.read_text(encoding="utf-8") for p in targets]
+    assert before == after
+
+
+def test_audit_exit_code_on_check_errors(tmp_path, capsys):
+    """① 区块有 check error 时退出 1；修复后退出 0。"""
+    root = tmp_path
+    log = ["## s1 段落标题\n\n> entry: %s\n" % EID]
+    write_log(root, log)
+    write_entry(root, base_fm(), "结论句。\n")
+    write_agents(root)
+
+    # 未生成 INDEX.md → check error → audit 退出 1
+    rc, out = capture(root, capsys, "audit")
+    assert rc == 1
+    assert "① 健康检查" in out
+
+    # 修复（index 重建）后 → 0
+    assert run(root, "index") == 0
+    rc, _out = capture(root, capsys, "audit")
+    assert rc == 0

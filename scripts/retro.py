@@ -6,8 +6,9 @@
 确定性地完成；log/ 为唯一真相源，entries 永远可由 log 重建。
 
 用法:  python retro.py --root <项目目录> <subcommand>
-       python retro.py --root <项目目录> index|check|stats|reconcile
+       python retro.py --root <项目目录> index|check|stats|reconcile|audit
        python retro.py --root <项目目录> escalate [--dry-run | --apply ID... | --demote ID...]
+       python retro.py --root <项目目录> audit [--close "总结" [--dismissed ID1,ID2]]
 
 退出码: 0=通过; 1=check 发现 errors 或脚本内部错误; 2=用法错误。
 所有输出均为中文。所有文件读写显式 encoding="utf-8"。
@@ -41,10 +42,17 @@ DIR_LOG = ".retro/log"
 DIR_ENTRIES = ".retro/entries"
 FILE_INDEX = ".retro/INDEX.md"
 FILE_ESCALATION = ".retro/escalation.log.jsonl"
+FILE_AUDIT = ".retro/audit.log.jsonl"
 FILE_AGENTS = "AGENTS.md"
 
 AGENTS_START = "<!-- retro-managed-start -->"
 AGENTS_END = "<!-- retro-managed-end -->"
+
+# 审计轮阈值
+AUDIT_INTERVAL_DAYS = 7            # 审计轮最小间隔（驳回记忆复用同一阈值）
+AUDIT_NEW_ENTRIES_TRIGGER = 10     # 新增条数触发阈值
+AUDIT_RULES_WARN_THRESHOLD = 10    # 规则区预警阈值（上限 12）
+AUDIT_STALE_DAYS = 30              # 失效候选「疑似档」老条目阈值
 
 NEG_WORDS = ("不能", "不能用", "不要", "避免", "失败")
 POS_WORDS = ("可以", "能行", "可行", "推荐", "成功")
@@ -1133,15 +1141,20 @@ def _escalate_candidates(analysis, force=False):
     return cands
 
 
+def _print_candidate_lines(cands):
+    """逐条打印候选（id/title/评分/逐项理由），不带区块头与执行提示。"""
+    for c in cands:
+        _stdout("[%s] %s  评分=%d" % (c["id"], c["title"], c["score"]))
+        for r in c["reasons"]:
+            _stdout("    - %s" % r)
+
+
 def _print_candidates(cands):
     _stdout("=== escalate 候选 ===")
     if not cands:
         _stdout("无满足升级门槛的候选（需 status=verified、seen_count≥2 或 applied_ok≥1、非 superseded、未 escalated）。")
         return
-    for c in cands:
-        _stdout("[%s] %s  评分=%d" % (c["id"], c["title"], c["score"]))
-        for r in c["reasons"]:
-            _stdout("    - %s" % r)
+    _print_candidate_lines(cands)
     if cands:
         _stdout("如需执行请显式确认后：escalate --apply %s" % " ".join(c["id"] for c in cands))
 
@@ -1371,6 +1384,226 @@ def _cmd_reconcile(root):
     return 0
 
 
+# ---------------------------------------------------------------- 子命令：audit（审计轮）
+
+_RULE_ID_RE = re.compile(r"\[(\d{8}-\d{3})\]")
+
+
+def _parse_date(s):
+    """解析 'YYYY-MM-DD' 前缀日期，解析失败返回 None。"""
+    if not isinstance(s, str):
+        return None
+    try:
+        return datetime.datetime.strptime(s[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _count_rule_blank_drift(root):
+    """标记区内「规则行→空行→规则行」计数；无标记区返回 None。"""
+    path = os.path.join(root, FILE_AGENTS)
+    if not os.path.isfile(path):
+        return None
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+    si = content.find(AGENTS_START)
+    ei = content.find(AGENTS_END)
+    if si == -1 or ei == -1 or ei < si:
+        return None
+
+    def is_rule(ln):
+        ls = ln.strip()
+        return ls.startswith("- ") and bool(_RULE_ID_RE.search(ls))
+
+    region = content[si + len(AGENTS_START): ei]
+    lines = region.split("\n")
+    n = 0
+    for i in range(len(lines) - 2):
+        if is_rule(lines[i]) and not lines[i + 1].strip() and is_rule(lines[i + 2]):
+            n += 1
+    return n
+
+
+def _read_audit_records(root):
+    """读取全部审计记录（追加式文件，坏行跳过）。文件不存在 → []。"""
+    records = []
+    path = os.path.join(root, FILE_AUDIT)
+    if os.path.isfile(path):
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    records.append(json.loads(line))
+                except ValueError:
+                    continue
+    return records
+
+
+def _read_dismissal_memory(records):
+    """汇总所有审计记录的驳回名单：{id: 最近一次驳回轮次 ts}。"""
+    mem = {}
+    for rec in records:
+        for did in rec.get("dismissed") or []:
+            if isinstance(did, str) and did:
+                mem[did] = rec.get("ts", "")
+    return mem
+
+
+def _escalation_logged_ids(root):
+    """escalation.log.jsonl 中所有 escalate op 的 ids 并集（覆盖率分子用）。"""
+    ids = set()
+    path = os.path.join(root, FILE_ESCALATION)
+    if not os.path.isfile(path):
+        return ids
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            if rec.get("op") == "escalate" and isinstance(rec.get("ids"), list):
+                for i in rec["ids"]:
+                    if isinstance(i, str):
+                        ids.add(i)
+    return ids
+
+
+def _cmd_audit(root):
+    """审计轮干跑：六区块只读报告。全程不写任何文件（只读通过 check 的 write_status=False 保证）。"""
+    # 只读复用：_cmd_check(write_status=False) 内部这一次 _analyze 供六个区块共享
+    errors, warnings, analysis, _updates = _cmd_check(root, write_status=False)
+    today = datetime.date.today()
+
+    _stdout("=== audit ===")
+
+    # ① 健康检查
+    _stdout("① 健康检查")
+    _stdout("[errors] %d" % len(errors))
+    _stdout("[warnings] %d" % len(warnings))
+    agents_status, rules = _read_agents_rules(root)
+    if agents_status is not None:
+        rules = []
+        why = "文件缺失" if agents_status == "missing" else "标记被破坏"
+        _stdout("AGENTS.md 无可用标记区（%s），规则相关区块仅供参考" % why)
+    else:
+        _stdout("规则区格式漂移（规则行→空行→规则行）: %d 处" % _count_rule_blank_drift(root))
+        _stdout("规则区规则数: %d/12" % len(rules))
+        if len(rules) >= AUDIT_RULES_WARN_THRESHOLD:
+            _stdout("⚠ 规则区 %d/12，剩余 %d 空位，接近上限" % (len(rules), 12 - len(rules)))
+    if errors:
+        _stdout("存在 %d 个 check error，请先运行 check 修复数据（本次退出码 1）。" % len(errors))
+    rule_ids = {i for i, _ in rules}
+
+    # ② 升级候选（与 escalate 干跑同源）
+    _stdout("② 升级候选")
+    cands = _escalate_candidates(analysis)
+    if not cands:
+        _stdout("无满足升级门槛的候选（需 status=verified、seen_count≥2 或 applied_ok≥1、非 superseded、未 escalated）。")
+    else:
+        _print_candidate_lines(cands)
+        _stdout("如需执行请显式确认后：escalate --apply %s" % " ".join(c["id"] for c in cands))
+
+    # ③ 降级候选：已升级且在规则区的条目，(last_seen 升序, seen_count 升序, applied_count 升序) top 5
+    _stdout("③ 降级候选")
+    demote_pool = [e for e in analysis["entries"].values()
+                   if not e.get("fatal") and e["data"].get("escalated") is True and e["eid"] in rule_ids]
+    demote_pool.sort(key=lambda e: (e.get("last_seen") or "", e["seen_count"],
+                                    e.get("applied_count", 0)))
+    demote_top = demote_pool[:5]
+    if len(rule_ids) < AUDIT_RULES_WARN_THRESHOLD:
+        _stdout("规则区 %d/12，未到预警线，仅供参考" % len(rule_ids))
+    if not demote_top:
+        _stdout("（无降级候选：已升级且仍在规则区的条目为空）")
+    for e in demote_top:
+        _stdout("[%s] %s | last_seen=%s | seen×%s | applied×%s(ok %s)"
+                % (e["eid"], e["data"].get("title", ""), e.get("last_seen") or "-",
+                   e["seen_count"], e.get("applied_count", 0), e.get("applied_ok", 0)))
+
+    # ④ 失效候选（两档）
+    _stdout("④ 失效候选")
+    fail_cands = []
+    stale_cands = []
+    for e in analysis["entries"].values():
+        if e.get("fatal"):
+            continue
+        ac = e.get("applied_count", 0)
+        if ac > 0 and e.get("applied_ok", 0) == 0:
+            fail_cands.append(e)
+        elif ac == 0 and e.get("seen_count") == 1:
+            ls = _parse_date(e.get("last_seen"))
+            if ls is not None and (today - ls).days >= AUDIT_STALE_DAYS:
+                stale_cands.append(e)
+    fail_cands.sort(key=lambda e: (e.get("last_seen") or "", e["eid"]))
+    stale_cands.sort(key=lambda e: (e.get("last_seen") or "", e["eid"]))
+    stale_cands = stale_cands[:5]
+    _stdout("证据档（applied_count>0 且 applied_ok==0，fail 由 count-ok 现算）:")
+    if not fail_cands:
+        _stdout("  （无）")
+    for e in fail_cands:
+        _stdout("  [%s] %s | last_seen=%s | seen×%s | applied×%s(ok 0)"
+                % (e["eid"], e["data"].get("title", ""), e.get("last_seen") or "-",
+                   e["seen_count"], e["applied_count"]))
+    _stdout("疑似档（无 applied 数据 × seen×1 × ≥%d 天未现，供 LLM 复核）:" % AUDIT_STALE_DAYS)
+    if not stale_cands:
+        _stdout("  （无）")
+    for e in stale_cands:
+        _stdout("  [%s] %s | last_seen=%s | seen×%s"
+                % (e["eid"], e["data"].get("title", ""), e.get("last_seen") or "-", e["seen_count"]))
+
+    # ⑤ 重复/合并候选
+    _stdout("⑤ 重复/合并候选")
+    if not analysis["dup_pairs"]:
+        _stdout("（无）")
+    for eid1, eid2, jac in analysis["dup_pairs"]:
+        _stdout("[%s] ↔ [%s] Jaccard=%.2f" % (eid1, eid2, jac))
+
+    # ⑥ 审计状态
+    _stdout("⑥ 审计状态")
+    records = _read_audit_records(root)
+    if not records:
+        _stdout("从未审计")
+    else:
+        last_ts = records[-1].get("ts") or ""
+        last_date = _parse_date(last_ts)
+        if last_date is None:
+            _stdout("上次审计 ts 无法解析: %r" % last_ts)
+        else:
+            days = (today - last_date).days
+            _stdout("上次审计: %s（距今 %d 天）" % (last_ts[:10], days))
+            new_count = sum(1 for e in analysis["entries"].values()
+                            if not e.get("fatal") and e.get("first_seen")
+                            and e["first_seen"] > last_ts[:10])
+            _stdout("期间新增条目: %d 条" % new_count)
+            if new_count >= AUDIT_NEW_ENTRIES_TRIGGER:
+                _stdout("期间新增 ≥%d 条，达到触发阈值" % AUDIT_NEW_ENTRIES_TRIGGER)
+            left = AUDIT_INTERVAL_DAYS - days
+            if left > 0:
+                _stdout("下次建议审计: 还剩 %d 天（建议 %s）"
+                        % (left, (last_date + datetime.timedelta(days=AUDIT_INTERVAL_DAYS)).isoformat()))
+            else:
+                _stdout("下次建议审计: 已到期 %d 天" % (-left))
+    esc_ids = _escalation_logged_ids(root)
+    if rule_ids:
+        covered = len(rule_ids & esc_ids)
+        _stdout("escalation 覆盖: 规则区 %d 条中 %d 条有 escalate 记录（%d/%d）"
+                % (len(rule_ids), covered, covered, len(rule_ids)))
+    else:
+        _stdout("escalation 覆盖: 规则区为空")
+    dismiss_mem = _read_dismissal_memory(records) if records else {}
+    if dismiss_mem:
+        for did, ts in sorted(dismiss_mem.items()):
+            _stdout("历史驳回: %s（最近驳回 %s）" % (did, ts[:10] if ts else "-"))
+    else:
+        _stdout("历史驳回名单: （无）")
+
+    return 1 if errors else 0
+
+
 # ---------------------------------------------------------------- 入口
 
 
@@ -1391,6 +1624,7 @@ def _build_parser():
     p.add_argument("--force", action="store_true", help="绕过 seen_count≥2 门槛（仅限迁移/紧急场景，审计记录 force:true）")
     p.add_argument("--demote", nargs="+", metavar="ID", help="将指定条目从 AGENTS.md 规则降级")
     subs.add_parser("reconcile", help="检查 AGENTS.md 与条目 escalated 状态的漂移")
+    subs.add_parser("audit", help="审计轮：六区块只读报告（健康/升级/降级/失效/合并候选/审计状态）")
     return parser
 
 
@@ -1429,6 +1663,8 @@ def main(argv=None):
             return _cmd_escalate(root, args.dry_run, args.apply, args.demote, args.force)
         if sub == "reconcile":
             return _cmd_reconcile(root)
+        if sub == "audit":
+            return _cmd_audit(root)
         _stdout("未知子命令: %s" % sub)
         return 2
     except RetroError as e:
