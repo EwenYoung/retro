@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">retro — agent session experience, compiled into rules</title>
+  <desc id="desc">retro 把 agent 会话经验沉淀为持久知识库，验证后升级为常驻规则。图中展示 log、entries、AGENTS.md 三层结构与 applied 账本行。</desc>
+
+  <defs>
+    <linearGradient id="okGlow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3FB950" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#3FB950" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- background -->
+  <rect width="1200" height="360" rx="10" fill="#0D1117"/>
+
+  <!-- faint grid: the log's ruled-paper rhythm -->
+  <g stroke="#7D8590" stroke-opacity="0.07">
+    <line x1="56" y1="88" x2="1144" y2="88"/>
+    <line x1="56" y1="136" x2="1144" y2="136"/>
+    <line x1="56" y1="184" x2="1144" y2="184"/>
+    <line x1="56" y1="232" x2="1144" y2="232"/>
+    <line x1="56" y1="280" x2="1144" y2="280"/>
+  </g>
+
+  <!-- left: title block -->
+  <g transform="translate(64 56)">
+    <text x="0" y="0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19" fill="#7D8590">$ retro --root ./ "沉淀一下"</text>
+    <text x="0" y="86" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="76" font-weight="700" fill="#E6EDF3" letter-spacing="1">retro</text>
+    <text x="0" y="130" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="27" font-weight="600" fill="#E6EDF3">会话经验 → 持久知识 → 可复用规则</text>
+    <text x="0" y="168" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="20" fill="#7D8590">沉淀 · 验证门控 · 定期审计 · 只追加，不遗忘</text>
+    <rect x="0" y="196" width="118" height="34" rx="8" fill="none" stroke="#7D8590" stroke-opacity="0.45"/>
+    <text x="59" y="219" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#7D8590">24 tests</text>
+    <rect x="130" y="196" width="126" height="34" rx="8" fill="none" stroke="#7D8590" stroke-opacity="0.45"/>
+    <text x="193" y="219" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#7D8590">zero deps</text>
+    <rect x="268" y="196" width="126" height="34" rx="8" fill="none" stroke="#7D8590" stroke-opacity="0.45"/>
+    <text x="331" y="219" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#7D8590">MIT</text>
+  </g>
+
+  <!-- right: the three layers as real ledger lines -->
+  <g transform="translate(648 44)" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+    <!-- layer 1: log -->
+    <text x="0" y="0" font-size="16" fill="#7D8590">log/2026-08-31.md</text>
+    <rect x="0" y="14" width="500" height="84" rx="10" fill="#161B22" stroke="#7D8590" stroke-opacity="0.25"/>
+    <text x="16" y="40" font-size="17" fill="#7D8590">&gt; entry: 20260831-001</text>
+    <text x="16" y="66" font-size="17" fill="#7D8590">&gt; seen-again: 20260824-001</text>
+    <text x="16" y="92" font-size="17" fill="#E6EDF3">&gt; applied: 20260824-001 <tspan fill="#3FB950">ok</tspan></text>
+
+    <!-- layer 2: entries -->
+    <text x="0" y="128" font-size="16" fill="#7D8590">entries/20260824-001.md</text>
+    <rect x="0" y="142" width="500" height="66" rx="10" fill="#161B22" stroke="#7D8590" stroke-opacity="0.25"/>
+    <text x="16" y="168" font-size="17" fill="#E6EDF3">title: "CSS 变量声明优先于继承"</text>
+    <text x="16" y="194" font-size="17" fill="#7D8590">seen_count: 2&#160;&#160;&#160;applied_ok: 1&#160;&#160;&#160;<tspan fill="#3FB950">verified</tspan></text>
+
+    <!-- layer 3: AGENTS.md rule (promoted) -->
+    <text x="0" y="238" font-size="16" fill="#7D8590">AGENTS.md</text>
+    <rect x="0" y="252" width="500" height="60" rx="10" fill="#12261E" stroke="#3FB950" stroke-opacity="0.4"/>
+    <rect x="0" y="252" width="500" height="60" rx="10" fill="url(#okGlow)"/>
+    <text x="16" y="278" font-size="17" fill="#E6EDF3">- CSS 变量声明优先于继承 <tspan fill="#7D8590">[20260824-001]</tspan></text>
+    <text x="16" y="300" font-size="16" fill="#3FB950">↑ escalated · 常驻前台，每个会话都加载</text>
+
+    <!-- flow arrows between layers -->
+    <path d="M 250 98 L 250 138" stroke="#7D8590" stroke-width="1.5" stroke-opacity="0.6" marker-end="url(#arrow)"/>
+    <path d="M 250 208 L 250 248" stroke="#3FB950" stroke-width="1.5" marker-end="url(#arrow)"/>
+  </g>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7D8590"/>
+    </marker>
+  </defs>
+</svg>
