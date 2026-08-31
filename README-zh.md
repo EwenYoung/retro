@@ -1,0 +1,148 @@
+<div align="right">
+
+[English](README.md) · **中文**
+
+</div>
+
+<h1 align="center">retro</h1>
+
+<p align="center">
+  <strong>把 Agent 会话经验编译成持久知识，再蒸馏为可复用的规则</strong>
+  <br />
+  <em>经验沉淀 · 验证门控 · 定期审计 · 规则升降级</em>
+</p>
+
+<p align="center">
+  <a href="#快速开始"><img src="https://img.shields.io/badge/快速开始-4CAF50?style=for-the-badge" alt="Quick Start" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License" /></a>
+</p>
+
+---
+
+## 功能特性
+
+| Feature | Description |
+|---|---|
+| 经验沉淀 | 会话收尾时回顾本会话，把可复用的坑与策略写入项目 `.retro/` 知识库；只追加不删除，log 是唯一真相源 |
+| 验证门控 | 经验升级到 `AGENTS.md` 常驻规则区需要证据：被重复踩过（seen_count≥2）或被实际应用且有效（applied_ok≥1） |
+| 双层记忆 | `.retro/` 是按需查阅的档案库（不限量），`AGENTS.md` 是每个会话都加载的常驻前台（上限 12 条），升降级双向流动 |
+| 确定性记账 | 计数、去重、升降级、审计日志全部由脚本完成，零 LLM 参与——LLM 只负责判断与内容 |
+| 审计轮 | `audit` 子命令输出六区块只读报告：健康检查 / 升级候选 / 降级候选 / 失效候选 / 重复合并 / 审计状态 |
+| 驳回记忆 | 审计中被驳回的候选 7 天内静默，之后自动重新浮出并标注「请复查」，不重复打扰也不永久遗漏 |
+
+## 快速开始
+
+把本仓库复制到你的 `~/.agents/skills` 目录下：
+
+```bash
+git clone https://github.com/EwenYoung/retro.git ~/.agents/skills/retro
+```
+
+在目标项目的 `AGENTS.md` 中加入经验规则标记区：
+
+```markdown
+## 经验教训
+
+<!-- retro-managed-start -->
+<!-- retro-managed-end -->
+```
+
+## 使用方法
+
+### 对 agent 说
+
+会话收尾时，对 agent 说：
+
+```
+沉淀一下
+```
+
+也可以说「复盘」「总结经验」「记一下这次的坑」，或者什么都不说——agent 完成一场硬仗（修了个棘手 bug、搭好环境、长调试收尾）后会主动建议沉淀；没什么可记时它会说「本次没有值得沉淀的经验」，不硬凑。
+
+会话进行中实际用了某条旧经验，收尾时补一句：
+
+```
+这次用了 xxx 那条经验，管用
+```
+
+### agent 背后的工作流程
+
+「沉淀一下」触发后，agent 依次执行：
+
+1. **回顾本会话**，找五类信号：失败的尝试、用户的纠正、找了很久才发现的信息、被推翻的假设、稳定奏效的策略
+2. **按收录门槛过滤**：可复用、非显而易见、跨会话有效，三条同时满足才收录——从旧条目读来的内容不算新经验（防统计污染）
+3. **写入 `.retro/log/`**（原始摘录，只追加）与 `.retro/entries/`（结构化条目），同坑再现记 `seen-again`，实际用过记 `applied: ok/fail`
+4. **跑脚本记账**：`retro.py index` 补派生字段，`retro.py check` 校验（0 error 为验收线）
+5. **升级决策**：`retro.py escalate` 列出候选与逐项理由，经你确认后 `--apply` 升级进 `AGENTS.md` 规则区（上限 12 条，满了先降级最旧的）
+
+升级门槛是硬性的：条目必须 `verified` 且（被踩过 ≥2 次或被应用且有效 ≥1 次），没有证据的经验留在档案库。
+
+### 定期审计
+
+距上次审计 ≥7 天、期间新增 ≥10 条、或规则区 ≥10/12 时，建议跑一轮：
+
+```
+复盘一下经验库 / 跑一轮审计
+```
+
+agent 执行 `retro.py audit` 得到六区块只读报告（健康检查 / 升级候选 / 降级候选 / 失效候选 / 重复合并 / 审计状态），逐条语义复核后给你决策清单——升、降、合并、驳回，你确认后才执行，最后 `audit --close` 落账。被驳回的候选 7 天内静默，之后自动重新浮出并标注「请复查」。
+
+## 架构
+
+```mermaid
+flowchart TD
+    A["会话结束<br/>五类信号回顾"] -->|"沉淀"| B[".retro/log/<br/>原始摘录 · 唯一真相源"]
+    B -->|"index"| C[".retro/entries/<br/>结构化条目 + 派生字段"]
+    C -->|"escalate --apply<br/>seen≥2 或 applied_ok≥1"| D["AGENTS.md 规则区<br/>常驻前台 ≤ 12 条"]
+    C -->|"applied: ok/fail"| C
+    D -->|"escalate --demote"| C
+    E["audit 六区块报告<br/>用户确认门控"] -->|"升级 / 降级 / 驳回"| C
+    E -->|"close 落账"| F["audit.log.jsonl<br/>审计留痕 + 驳回记忆"]
+    D --> G["escalation.log.jsonl<br/>升降级审计"]
+
+    classDef start fill:#3B82F6,stroke:#2563EB,color:#fff,stroke-width:2px
+    classDef data fill:#8B5CF6,stroke:#7C3AED,color:#fff,stroke-width:2px
+    classDef rules fill:#F97316,stroke:#EA580C,color:#fff,stroke-width:2px
+    classDef process fill:#10B981,stroke:#059669,color:#fff,stroke-width:2px
+    classDef logstore fill:#06B6D4,stroke:#0891B2,color:#fff,stroke-width:2px
+
+    class A start
+    class B,C data
+    class D rules
+    class E process
+    class F,G logstore
+```
+
+- **向下流动（沉淀）**：会话 → log → entries → AGENTS.md，每一步有门槛
+- **向上流动（反馈）**：`applied ok/fail` 引用行记录经验的真实应用效果，驱动下一轮升级/失效判断
+- **回环（审计）**：audit 定期把全库拉出来体检，验证过的经验升级、过时的降级、驳回的有记忆
+
+## 项目结构
+
+```
+retro/
+├── SKILL.md                   # 技能指令：回顾信号、收录门槛、审计轮流程
+├── scripts/
+│   └── retro.py               # 确定性脚本：index / check / stats / escalate / reconcile / audit
+├── tests/
+│   └── test_retro.py          # 24 个集成测试
+├── LICENSE
+└── README.md
+```
+
+数据落在目标项目（不落在本仓库）：
+
+```
+<项目>/
+├── AGENTS.md                  # 经验规则区（retro-managed 标记区，≤12 条）
+└── .retro/
+    ├── log/YYYY-MM-DD.md      # 会话原始摘录（只追加）
+    ├── entries/YYYYMMDD-NNN.md  # 结构化条目（YAML frontmatter + 正文）
+    ├── INDEX.md               # 脚本生成的索引
+    ├── escalation.log.jsonl   # 升降级审计日志
+    └── audit.log.jsonl        # 审计轮次记录
+```
+
+## License
+
+[MIT](LICENSE)
