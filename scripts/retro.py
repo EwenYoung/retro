@@ -25,7 +25,8 @@ import datetime
 
 LLM_KEYS = ["id", "title", "tags", "confidence", "raw_ref", "supersedes"]
 SCRIPT_KEYS = [
-    "first_seen", "last_seen", "seen_count", "status", "escalated", "superseded_by",
+    "first_seen", "last_seen", "seen_count", "applied_count", "applied_ok",
+    "status", "escalated", "superseded_by",
 ]
 FIELD_ORDER = LLM_KEYS + SCRIPT_KEYS
 ALLOWED_KEYS = set(LLM_KEYS) | set(SCRIPT_KEYS)
@@ -312,7 +313,7 @@ def _atomic_write(path, content):
 
 
 def _scan_logs(root):
-    """扫描 .retro/log/*.md，返回 {date:{file,anchors:set,seen_again:set,entries:{anchor:id}}}。"""
+    """扫描 .retro/log/*.md，返回 {date:{file,anchors,seen_again,entries,applied,applied_bad}}。"""
     log_dir = os.path.join(root, DIR_LOG)
     meta = {}
     if not os.path.isdir(log_dir):
@@ -327,6 +328,8 @@ def _scan_logs(root):
         anchors = set()
         seen_again = set()
         entries = {}
+        applied = []  # (anchor, id, result) 合法 applied 行，按行计数不去重
+        applied_bad = []  # (anchor, 原行) 格式非法的 applied 行
         current_anchor = None
         path = os.path.join(log_dir, fn)
         with open(path, "r", encoding="utf-8") as f:
@@ -344,7 +347,17 @@ def _scan_logs(root):
                 em = re.match(r"^>\s*entry:\s*(\S+)", ls)
                 if em and current_anchor:
                     entries[current_anchor] = em.group(1).strip()
-        meta[date] = {"file": fn, "anchors": anchors, "seen_again": seen_again, "entries": entries}
+                    continue
+                arm = re.match(r"^>\s*applied:\s*(.*)$", ls)
+                if arm:
+                    rest = arm.group(1).strip()
+                    pm = re.match(r"^(\S+)\s+(\S+)$", rest)
+                    if pm and pm.group(2) in ("ok", "fail") and _is_valid_id(pm.group(1)):
+                        applied.append((current_anchor, pm.group(1), pm.group(2)))
+                    else:
+                        applied_bad.append((current_anchor, ls))
+        meta[date] = {"file": fn, "anchors": anchors, "seen_again": seen_again,
+                      "entries": entries, "applied": applied, "applied_bad": applied_bad}
     return meta
 
 
@@ -379,6 +392,26 @@ def _compute_seen(entry, log_meta):
     last_seen = max(all_dates) if all_dates else None
     seen_count = 1 + len(set(seen_again_dates)) if raw_ref_dates else (len(set(seen_again_dates)) if seen_again_dates else 0)
     return first_seen, last_seen, seen_count, issues
+
+
+def _compute_applied(entry, log_meta):
+    """返回 (applied_count, applied_ok)。
+
+    applied_count=该 id 所有 applied 行总数（按行计数，不去重，每行一次应用事件）；
+    applied_ok=其中 result==ok 的行数。
+    """
+    eid = entry.get("id")
+    if not _is_valid_id(eid):
+        return 0, 0
+    total = 0
+    ok = 0
+    for info in log_meta.values():
+        for _anchor, aid, result in info["applied"]:
+            if aid == eid:
+                total += 1
+                if result == "ok":
+                    ok += 1
+    return total, ok
 
 
 # ---------------------------------------------------------------- 文本分析（重复/矛盾）
@@ -522,6 +555,12 @@ def _analyze(root):
                 elif anchor and anchor not in log_meta[date]["anchors"]:
                     error_list.append((eid, "raw_ref 锚点 %s 在 %s 中不存在" % (anchor, date)))
 
+    # 4b) 计算 applied（log 引用行统计，按行计数不去重）
+    for eid, rec in entries.items():
+        if rec.get("fatal"):
+            continue
+        rec["applied_count"], rec["applied_ok"] = _compute_applied(rec["data"], log_meta)
+
     # 5) 计算 supersede 图谱
     superseder_of = {}  # old_id -> new_id
     for eid, rec in entries.items():
@@ -596,6 +635,16 @@ def _analyze(root):
                     if log_entry_id != eid:
                         warn_list.append((eid, "raw_ref %s 对应段落 entry 行指向 %s，与条目 id %s 不一致"
                                           % (r, log_entry_id, eid)))
+
+    # 6c) log 段落 applied 行校验（仅 warning，不升级为 error；挂在 log 文件#锚点上）
+    for date, info in log_meta.items():
+        for anchor, aid, _result in info["applied"]:
+            if aid not in entries:
+                loc = info["file"] + ("#" + anchor if anchor else "")
+                warn_list.append((loc, "log 段落 applied 行指向不存在的条目 id: %s" % aid))
+        for anchor, raw in info["applied_bad"]:
+            loc = info["file"] + ("#" + anchor if anchor else "")
+            warn_list.append((loc, "applied 行格式非法（应为 `> applied: <id> <ok|fail>`）: %s" % raw))
 
     # 7) 重复候选 / 矛盾候选（跨条目）
     dup_pairs = []
@@ -689,6 +738,9 @@ def _rewrite_derived(rec, log_meta, superseder_of):
     new_data["first_seen"] = rec["first_seen"]
     new_data["last_seen"] = rec["last_seen"]
     new_data["seen_count"] = rec["seen_count"]
+    # applied 两个字段始终写入（0 也写——「从未被用过」本身是信息）
+    new_data["applied_count"] = rec.get("applied_count", 0)
+    new_data["applied_ok"] = rec.get("applied_ok", 0)
     new_data["status"] = rec["write_status"]
     new_data["escalated"] = (data.get("escalated") is True)
     new_data["superseded_by"] = rec["superseded_by"]
@@ -762,6 +814,8 @@ def _write_index(root, analysis):
         tag_str = ",".join(str(t) for t in tags)
         status = rec["write_status"] or rec.get("stored_status") or "new"
         line = "- [%s] %s | %s | seen×%s | %s" % (eid, title, tag_str, rec["seen_count"], status)
+        if rec.get("applied_count", 0) > 0:
+            line += " | applied×%d(ok %d)" % (rec["applied_count"], rec.get("applied_ok", 0))
         if data.get("escalated") is True:
             line += " | ⬆"
         lines.append(line)
@@ -807,6 +861,8 @@ def _build_expected_index(analysis):
         tag_str = ",".join(str(t) for t in tags)
         status = rec["write_status"] or rec.get("stored_status") or "new"
         line = "- [%s] %s | %s | seen×%s | %s" % (eid, title, tag_str, rec["seen_count"], status)
+        if rec.get("applied_count", 0) > 0:
+            line += " | applied×%d(ok %d)" % (rec["applied_count"], rec.get("applied_ok", 0))
         if data.get("escalated") is True:
             line += " | ⬆"
         lines.append(line)
@@ -1010,6 +1066,14 @@ def _cmd_stats(root):
     _stdout("escalated: %d" % escalated)
     _stdout("needs_review: %d" % needs_review)
     _stdout("本周新增（>=%s）: %d" % (monday_str, this_week))
+    # applied 统计
+    applied_total = sum(e.get("applied_count", 0) for e in valid)
+    applied_ok_total = sum(e.get("applied_ok", 0) for e in valid)
+    applied_entries = sum(1 for e in valid if e.get("applied_count", 0) > 0)
+    _stdout("applied 总次数: %d" % applied_total)
+    _stdout("applied ok 次数: %d" % applied_ok_total)
+    _stdout("applied 成功率: %s" % ("%.1f%%" % (applied_ok_total * 100.0 / applied_total) if applied_total else "-"))
+    _stdout("被应用过的条目数: %d" % applied_entries)
     _stdout("seen_count Top5:")
     for e in top5:
         _stdout("  %s  %s  seen×%d" % (e["eid"], e["data"].get("title", ""), e["seen_count"]))
@@ -1037,16 +1101,19 @@ def _escalate_candidates(analysis, force=False):
             continue
         status = rec["intended_status"]
         seen = rec["seen_count"]
+        applied_ok = rec.get("applied_ok", 0)
         escalated = rec["data"].get("escalated") is True
-        if status == "verified" and seen >= min_seen and not escalated and not rec["is_superseded"]:
+        # 硬门槛：seen 达标 或 被成功应用过（force 只放宽 seen 一侧）
+        if status == "verified" and (seen >= min_seen or applied_ok >= 1) and not escalated and not rec["is_superseded"]:
             tags = rec["data"].get("tags") or []
             if not isinstance(tags, list):
                 tags = []
             tag_hit = bool(set(tags) & ESCALATE_TAG_BONUS)
             body_n = rec["body_lines_count"]
             body_hit = body_n <= 3
-            score = seen * 2 + (1 if tag_hit else 0) + (1 if body_hit else 0)
-            reasons = ["seen_count=%d → %d 分" % (seen, seen * 2)]
+            score = seen * 2 + applied_ok * 2 + (1 if tag_hit else 0) + (1 if body_hit else 0)
+            reasons = ["seen_count=%d → %d 分" % (seen, seen * 2),
+                       "applied_ok=%d → %d 分" % (applied_ok, applied_ok * 2)]
             if tag_hit:
                 reasons.append("命中可升级 tag(%s) → +1" % ",".join(sorted(set(tags) & ESCALATE_TAG_BONUS)))
             else:
@@ -1064,7 +1131,7 @@ def _escalate_candidates(analysis, force=False):
 def _print_candidates(cands):
     _stdout("=== escalate 候选 ===")
     if not cands:
-        _stdout("无满足升级门槛的候选（需 status=verified、seen_count≥2、非 superseded、未 escalated）。")
+        _stdout("无满足升级门槛的候选（需 status=verified、seen_count≥2 或 applied_ok≥1、非 superseded、未 escalated）。")
         return
     for c in cands:
         _stdout("[%s] %s  评分=%d" % (c["id"], c["title"], c["score"]))

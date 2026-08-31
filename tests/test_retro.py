@@ -218,3 +218,62 @@ def test_d9_title_61_chars_warns(tmp_path, capsys):
     rc, out = capture(root, capsys, "check")
     assert rc == 0
     assert "title 超过 60 字符 (61)" in out
+
+
+# ---------------------------------------------------------------- applied 追踪
+
+
+def test_applied_lines_parsed_into_derived_fields(tmp_path):
+    """log 中 applied 引用行 → index 后条目 frontmatter 出现 applied_count/applied_ok。"""
+    root = tmp_path
+    log = ["## s1 段落标题\n\n> entry: %s\n> applied: %s ok\n" % (EID, EID)]
+    write_log(root, log)
+    write_entry(root, base_fm(), "结论句。\n\n- **症状**：x\n- **解法**：y\n")
+    write_agents(root)
+    assert run(root, "index") == 0
+    content = (root / ".retro" / "entries" / ("%s.md" % EID)).read_text(encoding="utf-8")
+    assert "applied_count: 1" in content
+    assert "applied_ok: 1" in content
+
+
+def test_applied_ok_meets_escalate_threshold(tmp_path, capsys):
+    """seen_count=1 但 applied_ok=1 → 条目出现在 escalate 候选列表（门槛放宽生效）。"""
+    root = tmp_path
+    log = ["## s1 段落标题\n\n> entry: %s\n> applied: %s ok\n" % (EID, EID)]
+    write_log(root, log)
+    write_entry(root, base_fm(), "结论句。\n\n- **症状**：x\n- **解法**：y\n")
+    write_agents(root)
+    assert run(root, "index") == 0
+    assert run(root, "check") == 0
+
+    rc, out = capture(root, capsys, "escalate")
+    assert rc == 0
+    assert "[%s]" % EID in out
+    assert "applied_ok=1 → 2 分" in out
+
+
+def test_applied_ok_fail_mix_counts(tmp_path):
+    """同一 id 两行 applied（1 ok + 1 fail）→ applied_count=2、applied_ok=1。"""
+    root = tmp_path
+    log = ["## s1 段落标题\n\n> entry: %s\n> applied: %s ok\n> applied: %s fail\n" % (EID, EID, EID)]
+    write_log(root, log)
+    write_entry(root, base_fm(), "结论句。\n\n- **症状**：x\n- **解法**：y\n")
+    write_agents(root)
+    assert run(root, "index") == 0
+    content = (root / ".retro" / "entries" / ("%s.md" % EID)).read_text(encoding="utf-8")
+    assert "applied_count: 2" in content
+    assert "applied_ok: 1" in content
+
+
+def test_applied_line_missing_id_warns(tmp_path, capsys):
+    """log 段落 applied 行指向不存在的条目 id → check 输出 warning（且不是 error）。"""
+    root = tmp_path
+    log = ["## s1 段落标题\n\n> entry: %s\n> applied: 20260824-999 ok\n" % EID]
+    write_log(root, log)
+    write_entry(root, base_fm(), "结论句。\n\n- **症状**：x\n- **解法**：y\n")
+    write_agents(root)
+    assert run(root, "index") == 0
+
+    rc, out = capture(root, capsys, "check")
+    assert rc == 0  # warning 不升级为 error
+    assert "applied 行指向不存在的条目 id: 20260824-999" in out
