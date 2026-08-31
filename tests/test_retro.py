@@ -9,6 +9,7 @@ import datetime
 import importlib.util
 import json
 import os
+import sys
 
 import pytest
 
@@ -381,7 +382,7 @@ def test_audit_rules_warn_threshold(tmp_path, capsys):
 
     rc, out = capture(root, capsys, "audit")
     assert rc == 0
-    assert "⚠ 规则区 10/12，剩余 2 空位，接近上限" in out
+    assert "! 规则区 10/12，剩余 2 空位，接近上限" in out
 
 
 def test_audit_demote_candidates_sorted(tmp_path, capsys):
@@ -551,3 +552,37 @@ def test_audit_dismissed_silent_then_resurface(tmp_path, capsys):
     seg3 = out.split("③ 降级候选")[1].split("④ 失效候选")[0]
     assert "[%s]" % EID in seg3
     assert "请复查" in seg3
+
+
+def test_audit_stdout_encoding_safe_subprocess(tmp_path):
+    """subprocess 用真实 stdout 编码（Windows GBK 等），audit 不应因 emoji 崩溃。
+
+    回归 U+26A0（⚠）/ U+2194（↔）在 GBK 控制台 UnicodeEncodeError 的 bug：
+    capsys 重定向 stdout 走不到真实编码路径，只有 subprocess 能复现。
+    """
+    import subprocess
+    root = tmp_path
+    # 两条标题相同的升级条目 → 触发 ⑤ 重复候选（验证 ↔ 替代写法安全）
+    fm = {"id": "20260101-001", "title": "完全相同的标题甲", "tags": ["domain"],
+          "confidence": "high", "raw_ref": ["log/2026-01-01.md#s1"],
+          "supersedes": None, "escalated": True}
+    write_entry(root, fm, "结论句。\n")
+    fm2 = dict(fm, id="20260101-002", raw_ref=["log/2026-01-01.md#s2"])
+    write_entry(root, fm2, "结论句。\n")
+    write_log_at(root, "2026-01-01",
+                 ["## s1 段落甲\n\n> entry: 20260101-001\n",
+                  "## s2 段落乙\n\n> entry: 20260101-002\n"])
+    # 10 条规则（含 001/002 两条真实升级条目）→ 触发阈值预警（验证 ⚠ 替代写法安全）
+    rule_lines = ["- 规则%02d [20260101-%03d]" % (i + 1, i + 1) for i in range(10)]
+    content = ("# AGENTS.md\n\n## 经验教训\n\n<!-- retro-managed-start -->\n"
+               + "\n".join(rule_lines) + "\n<!-- retro-managed-end -->\n")
+    (root / "AGENTS.md").write_text(content, encoding="utf-8")
+    assert run(root, "index") == 0  # entries 写完再 index，避免 INDEX 过期 error
+
+    proc = subprocess.run(
+        [sys.executable, SCRIPTS_RETRO, "--root", str(root), "audit"],
+        capture_output=True, text=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "! 规则区 10/12" in proc.stdout
+    assert "<->" in proc.stdout  # ⑤ 区块格式

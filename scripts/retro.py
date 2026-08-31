@@ -78,7 +78,13 @@ def _stamp():
 
 
 def _stdout(msg=""):
-    print(msg, flush=True)
+    try:
+        print(msg, flush=True)
+    except UnicodeEncodeError:
+        # Windows 本地控制台编码（如 GBK）可能无法编码部分字符，降级为 replace
+        enc = sys.stdout.encoding or "utf-8"
+        sys.stdout.buffer.write((str(msg) + "\n").encode(enc, "replace"))
+        sys.stdout.flush()
 
 
 def _is_valid_id(s):
@@ -1523,7 +1529,7 @@ def _cmd_audit(root, summary=None, dismissed=None, close=False):
         _stdout("规则区格式漂移（规则行→空行→规则行）: %d 处" % _count_rule_blank_drift(root))
         _stdout("规则区规则数: %d/12" % len(rules))
         if len(rules) >= AUDIT_RULES_WARN_THRESHOLD:
-            _stdout("⚠ 规则区 %d/12，剩余 %d 空位，接近上限" % (len(rules), 12 - len(rules)))
+            _stdout("! 规则区 %d/12，剩余 %d 空位，接近上限" % (len(rules), 12 - len(rules)))
     if errors:
         _stdout("存在 %d 个 check error，请先运行 check 修复数据（本次退出码 1）。" % len(errors))
     rule_ids = {i for i, _ in rules}
@@ -1617,7 +1623,7 @@ def _cmd_audit(root, summary=None, dismissed=None, close=False):
         else:
             _stdout("（无）")
     for eid1, eid2, jac, marker in pair_out:
-        _stdout("[%s] ↔ [%s] Jaccard=%.2f%s" % (eid1, eid2, jac, marker))
+        _stdout("[%s] <-> [%s] Jaccard=%.2f%s" % (eid1, eid2, jac, marker))
 
     # ⑥ 审计状态
     _stdout("⑥ 审计状态")
