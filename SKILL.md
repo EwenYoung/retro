@@ -113,6 +113,7 @@ id 分配规则：`YYYYMMDD-NNN`，NNN 为当日已有最大序号 +1（3 位补
 | `stats` | 统计（条目/状态/seen_top/tag/applied/INDEX 体量/规则数），零 LLM | 只读 |
 | `escalate` | 列候选（硬门槛：seen_count≥2 或 applied_ok≥1）/ `--apply ID...` 升级 / `--force` 绕过 seen_count≥2 门槛（仅限迁移/紧急场景，审计记录 force:true）/ `--demote ID...` 降级 | 写 |
 | `reconcile` | 检查 AGENTS.md 与条目 escalated 的漂移 | 只读 |
+| `audit` | 审计轮：六区块只读报告（健康/升级/降级/失效/合并候选/审计状态）；`--close "总结" [--dismissed id1,id2]` 落账本轮审计 | 只读/追加 |
 
 > `check` 会自动写回 status（new→verified/needs_review/superseded 回归），这是脚本管辖派生字段的正常行为，**不写审计日志**。审计日志（`escalation.log.jsonl`）只记录人为升降级决策（`escalate --apply`/`--demote`）。
 
@@ -140,7 +141,52 @@ AGENTS.md 每个会话都会加载，是「常驻前台」；`.retro/` 是按需
 - AGENTS.md 标记区规则 ≥12 条时 `--apply` 会被拒绝，并给出降级候选（按 last_seen 升序）。
 - 降级用 `escalate --demote <id>`，只回 `.retro/` 不移除条目，写审计日志。降级候选排序由脚本实现：按 last_seen 升序，同 last_seen 再按 seen_count 升序。
 
-## 第五步：冲突处理约定
+## 第五步：审计轮
+
+经验库定期审计，是「知识精修时刻」：把高频经验补上 scope、清理失效/重复候选。`retro.py audit` 干跑是**只读报告，不代写任何状态**；只有 `--close` 会追加一行 `audit.log.jsonl`（审计记录只追加、不删除，同 escalation.log）。
+
+### 触发条件（三选一，满足即建议）
+
+- 距上次审计 ≥ 7 天（`audit.log.jsonl` 最近一条记录的 ts）
+- 期间新增条目 ≥ 10 条
+- 规则区 ≥ 10/12（接近 12 条上限）
+
+满足时在任务收尾**建议**用户跑一轮审计（建议不是执行；`--close` 落账前需用户确认）。
+
+### 运行与六区块怎么读
+
+```bash
+retro.py --root <项目目录> audit    # 干跑：六区块只读报告
+retro.py --root <项目目录> audit --close "本轮总结" [--dismissed id1,id2]   # 落账
+```
+
+1. **① 健康检查**：check 的 errors/warnings 数、规则区格式漂移、规则数预警。有 error 时审计退出码 1——先修数据再审计。
+2. **② 升级候选**：与 `escalate` 干跑同源（硬门槛：seen_count≥2 或 applied_ok≥1），逐条确认后走 `escalate --apply`。
+3. **③ 降级候选**：已升级且在规则区、按旧度排序 top 5。读正文确认仍有效，无效才 `escalate --demote`；只是参考列表，不是命令。
+4. **④ 失效候选**：证据档（applied 全 fail）看失败上下文判断是经验过时还是当时误用；疑似档（无 applied × seen×1 × ≥30 天未现）供 LLM 复核。
+5. **⑤ 重复/合并候选**：按「主体/解法/升级去向任一不同可各留一条」仲裁（例：ui-theme-vars 的 001「元素级 CSS 变量声明」与 003「官方新组件元素级变量」不合并）。
+6. **⑥ 审计状态**：上次审计距今、期间新增、下次建议日期、escalation 覆盖、历史驳回名单——判断触发条件与体检节奏。
+
+### scope 回填（核心动作）
+
+审计时对**无 scope 的升级候选与高频条目**（seen×≥2 或 applied×≥1）回填适用条件：能写出「何时该用/何时别用」就写进 `scope`（规则行会带 `（scope）`），写不出说明经验本身不聚焦，考虑合并。这是审计轮作为「知识精修时刻」的核心动作。
+
+### 决策清单
+
+升 / 降 / 合并 / supersedes（新条目推翻了旧经验）/ 驳回（暂不处理），**经用户确认后**走既有命令执行：
+
+- 升：`escalate --apply <id>`；降：`escalate --demote <id>`；合并与 supersedes：手工改 entries 后 `index`。
+- 驳回的 id 记入 `--dismissed`，7 天内不再浮出（静默剔除），之后重新浮出并标注「请复查」。
+
+### 收尾
+
+1. 干跑读六区块，拿 ③④⑤ 做语义判断，scope 回填，决策清单跟用户确认后执行。
+2. 必跑 `audit --close "本轮总结" [--dismissed ...]` 落账（check 有 error 会被拒绝）。
+3. 最后 `retro.py check` 验收 0 error。
+
+原则句：**audit 只读报告，不代写任何状态**（不修格式漂移、不写 entries/INDEX/AGENTS.md——report-only）；驳回过的候选 7 天内静默、之后重新浮出。
+
+## 第六步：冲突处理约定
 
 - **重复/近似重复**：check 会按标题相似度给出合并建议，上报后由本技能合并（保留 raw_ref 与 seen_count）。同原理多条的合并标准：主体/解法/升级去向任一不同可各留一条（例：ui-theme-vars 的 001「元素级 CSS 变量声明」是自研主题写法约束、003「官方新组件元素级变量」是覆盖官方组件的对抗规则，两者不合并）。
 - **内容矛盾**：用 `supersedes` 标记（新条目指向旧条目 id），脚本自动给旧条目 `superseded_by`。绝不删除旧条目。
