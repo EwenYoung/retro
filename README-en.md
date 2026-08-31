@@ -12,10 +12,6 @@
 
 ## Features
 
-<p align="center">
-  <img src="./assets/readme/section-features.svg" width="100%" alt="Features section header">
-</p>
-
 | Feature | Description |
 |---|---|
 | Session Capture | At wrap-up, the agent reviews the session and writes reusable pitfalls and strategies into the project's `.retro/` knowledge base. Append-only — the log is the single source of truth |
@@ -34,10 +30,6 @@ git clone https://github.com/EwenYoung/retro.git ~/.agents/skills/retro
 That's it — everything after installation is handled automatically by the agent. No configuration needed.
 
 ## Usage
-
-<p align="center">
-  <img src="./assets/readme/section-usage.svg" width="100%" alt="Usage section header: tell the agent to retro">
-</p>
 
 Variants like "distill this session" or "note today's pitfalls" also work. Say nothing and the agent will still proactively suggest a retro after a substantial task — a tough bug fix, an environment setup, a long debugging session. When there is nothing worth recording, it says so instead of padding.
 
@@ -60,11 +52,7 @@ When the last audit is ≥7 days old, ≥10 new entries have accumulated, or the
 ## Architecture
 
 <p align="center">
-  <img src="./assets/readme/section-architecture.svg" width="100%" alt="Architecture section header">
-</p>
-
-<p align="center">
-  <img src="./assets/readme/architecture.svg" width="100%" alt="retro architecture: session experience is captured into the log, compiled into entries by index, and promoted to resident AGENTS.md rules through verified gating. The audit loop on the right drives promotion (green), demotion (red), and dismissal (gray) verdicts, closing each round into the jsonl logs.">
+  <img src="./assets/readme/architecture.svg" width="100%" alt="retro flywheel: session lessons are captured into the log, compiled into entries by index, and promoted to resident AGENTS.md rules through verified gating. The dashed spokes write every application result back to the knowledge base, and the audit round gates promotion with user confirmation.">
 </p>
 
 - **Downward flow (capture)**: session → log → entries → AGENTS.md, with a bar at every step

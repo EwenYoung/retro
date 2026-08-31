@@ -12,10 +12,6 @@
 
 ## 功能特性
 
-<p align="center">
-  <img src="./assets/readme/section-features.svg" width="100%" alt="功能特性区块头">
-</p>
-
 | Feature | Description |
 |---|---|
 | 经验沉淀 | 会话收尾时回顾本会话，把可复用的坑与策略写入项目 `.retro/` 知识库；只追加不删除，log 是唯一真相源 |
@@ -34,10 +30,6 @@ git clone https://github.com/EwenYoung/retro.git ~/.agents/skills/retro
 装好即用——之后所有事都由 agent 自动完成，无需配置。
 
 ## 使用方法
-
-<p align="center">
-  <img src="./assets/readme/section-usage.svg" width="100%" alt="使用方法区块头：对 agent 说「沉淀一下」">
-</p>
 
 也可以说「复盘」「总结经验」「记一下这次的坑」，或者什么都不说——agent 完成一场硬仗（修了个棘手 bug、搭好环境、长调试收尾）后会主动建议沉淀；没什么可记时它会直接说「本次没有值得沉淀的经验」，不硬凑。
 
@@ -58,10 +50,6 @@ git clone https://github.com/EwenYoung/retro.git ~/.agents/skills/retro
 距上次审计 ≥7 天、期间新增 ≥10 条、或规则区 ≥10/12 时，agent 会在收尾时建议跑一轮审计。执行 `retro.py audit` 得到六区块只读报告，agent 逐条语义复核后给你决策清单——升、降、合并、驳回，你确认后才执行，最后 `audit --close` 落账。被驳回的候选 7 天内静默，之后自动重新浮出并标注「请复查」。
 
 ## 架构
-
-<p align="center">
-  <img src="./assets/readme/section-architecture.svg" width="100%" alt="架构区块头">
-</p>
 
 <p align="center">
   <img src="./assets/readme/architecture.svg" width="100%" alt="retro 架构图：会话经验沉淀为 log，index 编译为 entries，验证门控升级为 AGENTS.md 常驻规则；右侧 audit 审计轮以绿/红/灰三条裁决线驱动升级、降级与驳回，close 落账到 jsonl 日志。">

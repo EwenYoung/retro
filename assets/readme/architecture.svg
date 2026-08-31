@@ -1,98 +1,90 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="640" viewBox="0 0 1200 640" role="img" aria-labelledby="title desc">
-  <title id="title">retro 架构：三层记忆与双向流动</title>
-  <desc id="desc">架构图：会话经验沉淀为 log，index 编译为 entries，验证门控升级为 AGENTS.md 常驻规则；applied ok/fail 反馈回流，audit 审计轮驱动升降级，两条 jsonl 日志留痕。</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="736" viewBox="0 0 1040 736" role="img" aria-labelledby="retro-arch-title retro-arch-desc">
+  <title id="retro-arch-title">retro 经验飞轮</title>
+  <desc id="retro-arch-desc">retro 的运行闭环：会话收尾沉淀经验入账，index 编译为结构化条目，agent 工作时应用经验并把 ok/fail 结果写回知识库；定期审计经用户门控后升级规则到 AGENTS.md 或降级回炉，精修后的知识库进入下一轮沉淀。中心的经验库随每轮循环复利累积。虚线辐条把每次应用结果写回知识库，审计轮经用户确认驱动升级与降级。</desc>
 
   <defs>
-    <marker id="ag" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7D8590"/>
+    <marker id="retro-arch-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#7D8590"/>
     </marker>
-    <marker id="agGreen" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3FB950"/>
-    </marker>
-    <marker id="agRed" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#F85149"/>
+    <marker id="retro-arch-arrow-soft" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#8B949E"/>
     </marker>
   </defs>
 
-  <rect width="1200" height="640" rx="10" fill="#0D1117"/>
+  <!-- paper -->
+  <rect width="1040" height="736" fill="#0D1117"/>
 
-  <!-- ================= left column: capture flow (top-down) ================= -->
-  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
-    <text x="72" y="66" font-size="15" fill="#7D8590">session end</text>
-    <rect x="64" y="80" width="300" height="64" rx="10" fill="#161B22" stroke="#7D8590" stroke-opacity="0.3"/>
-    <text x="80" y="108" font-size="17" fill="#E6EDF3">会话结束 · 回顾本会话</text>
-    <text x="80" y="132" font-size="15" fill="#7D8590">五类信号 · 收录门槛过滤</text>
-
-    <path d="M 214 144 L 214 180" stroke="#7D8590" stroke-width="1.5" stroke-opacity="0.7" marker-end="url(#ag)"/>
-    <text x="226" y="168" font-size="14" fill="#7D8590">沉淀 · 只追加</text>
-
-    <text x="72" y="206" font-size="15" fill="#7D8590">.retro/log/ · 唯一真相源</text>
-    <rect x="64" y="220" width="300" height="96" rx="10" fill="#161B22" stroke="#7D8590" stroke-opacity="0.3"/>
-    <text x="80" y="246" font-size="16" fill="#7D8590">&gt; entry: 20260831-001</text>
-    <text x="80" y="270" font-size="16" fill="#7D8590">&gt; seen-again: 20260824-001</text>
-    <text x="80" y="294" font-size="16" fill="#E6EDF3">&gt; applied: 20260824-001 <tspan fill="#3FB950">ok</tspan></text>
-
-    <path d="M 214 316 L 214 352" stroke="#7D8590" stroke-width="1.5" stroke-opacity="0.7" marker-end="url(#ag)"/>
-    <text x="226" y="340" font-size="14" fill="#7D8590">index · 派生字段</text>
-
-    <text x="72" y="378" font-size="15" fill="#7D8590">.retro/entries/ · 结构化条目</text>
-    <rect x="64" y="392" width="300" height="96" rx="10" fill="#161B22" stroke="#7D8590" stroke-opacity="0.3"/>
-    <text x="80" y="418" font-size="16" fill="#E6EDF3">title: "CSS 变量声明优先于继承"</text>
-    <text x="80" y="442" font-size="16" fill="#7D8590">seen_count: 2   applied_ok: 1</text>
-    <text x="80" y="466" font-size="16" fill="#3FB950">status: verified</text>
-
-    <path d="M 214 488 L 214 524" stroke="#3FB950" stroke-width="2" marker-end="url(#agGreen)"/>
-    <text x="226" y="512" font-size="14" fill="#3FB950">escalate --apply · 验证门控</text>
-
-    <text x="72" y="550" font-size="15" fill="#7D8590">AGENTS.md · retro-managed 区</text>
-    <rect x="64" y="564" width="300" height="56" rx="10" fill="#12261E" stroke="#3FB950" stroke-opacity="0.45"/>
-    <text x="80" y="590" font-size="16" fill="#E6EDF3">- CSS 变量声明优先于继承</text>
-    <text x="80" y="610" font-size="15" fill="#3FB950">↑ escalated · 每个会话都加载</text>
+  <!-- ===== ring flow (drawn before boxes) ===== -->
+  <g fill="none" stroke="#7D8590" stroke-width="1.2">
+    <path d="M 640 154 A 256 256 0 0 1 709.6 208" marker-end="url(#retro-arch-arrow)"/>
+    <path d="M 761.8 296 A 256 256 0 0 1 761.8 464" marker-end="url(#retro-arch-arrow)"/>
+    <path d="M 709.6 552 A 256 256 0 0 1 640 606" marker-end="url(#retro-arch-arrow)"/>
+    <path d="M 400 606 A 256 256 0 0 1 330.4 552" marker-end="url(#retro-arch-arrow)"/>
+    <path d="M 278.2 464 A 256 256 0 0 1 278.2 296" marker-end="url(#retro-arch-arrow)"/>
+    <path d="M 330.4 208 A 256 256 0 0 1 400 154" marker-end="url(#retro-arch-arrow)"/>
   </g>
 
-  <!-- ================= right column: audit loop + jsonl ================= -->
-  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
-    <text x="880" y="66" font-size="15" fill="#7D8590">audit · 定期审计轮（≥7 天 / +10 条 / ≥10/12）</text>
-    <rect x="872" y="80" width="264" height="150" rx="10" fill="#161B22" stroke="#7D8590" stroke-opacity="0.3"/>
-    <text x="888" y="108" font-size="16" fill="#E6EDF3">六区块只读报告</text>
-    <text x="888" y="134" font-size="15" fill="#7D8590">① 健康   ② 升级候选</text>
-    <text x="888" y="158" font-size="15" fill="#7D8590">③ 降级   ④ 失效</text>
-    <text x="888" y="182" font-size="15" fill="#7D8590">⑤ 重复   ⑥ 审计状态</text>
-    <text x="888" y="212" font-size="15" fill="#E6EDF3">用户确认门控 → 执行</text>
-
-    <!-- audit verdict arrows into the entries card (leftward) -->
-    <path d="M 872 110 C 760 108, 560 160, 372 424" stroke="#3FB950" stroke-width="1.5" marker-end="url(#agGreen)"/>
-    <rect x="560" y="132" width="196" height="26" rx="6" fill="#0D1117" fill-opacity="0.9"/>
-    <text x="658" y="150" text-anchor="middle" font-size="14" fill="#3FB950">升级：证据充分的经验入列</text>
-    <path d="M 872 150 C 780 180, 640 260, 372 430" stroke="#F85149" stroke-width="1.5" marker-end="url(#agRed)"/>
-    <rect x="600" y="212" width="176" height="26" rx="6" fill="#0D1117" fill-opacity="0.9"/>
-    <text x="688" y="230" text-anchor="middle" font-size="14" fill="#F85149">降级 / 失效：证据失效回炉</text>
-    <path d="M 872 190 C 800 240, 700 300, 470 348" stroke="#7D8590" stroke-width="1.5" stroke-opacity="0.7" marker-end="url(#ag)"/>
-    <rect x="612" y="286" width="188" height="26" rx="6" fill="#0D1117" fill-opacity="0.9"/>
-    <text x="706" y="304" text-anchor="middle" font-size="14" fill="#7D8590">驳回 · 7 天静默后浮出</text>
-
-    <!-- audit close → jsonl -->
-    <path d="M 1004 230 L 1004 268" stroke="#7D8590" stroke-width="1.5" stroke-opacity="0.7" marker-end="url(#ag)"/>
-    <text x="1016" y="254" font-size="14" fill="#7D8590">close 落账</text>
-
-    <text x="880" y="294" font-size="15" fill="#7D8590">.retro/*.jsonl · 只追加 · 审计留痕</text>
-    <rect x="872" y="308" width="264" height="80" rx="10" fill="#161B22" stroke="#7D8590" stroke-opacity="0.3"/>
-    <text x="888" y="336" font-size="16" fill="#E6EDF3">audit.log.jsonl</text>
-    <text x="888" y="360" font-size="15" fill="#7D8590">轮次 · dismissed 驳回记忆</text>
-    <text x="888" y="380" font-size="16" fill="#E6EDF3">escalation.log.jsonl</text>
-
-    <rect x="872" y="404" width="264" height="52" rx="10" fill="#161B22" stroke="#7D8590" stroke-opacity="0.3"/>
-    <text x="888" y="426" font-size="15" fill="#E6EDF3">dismissed 静默 7 天</text>
-    <text x="888" y="448" font-size="15" fill="#7D8590">→ 重新浮出 · 请复查</text>
-
-    <!-- jsonl link back down to AGENTS.md demote path label -->
-    <text x="880" y="490" font-size="15" fill="#7D8590">升降级全程有备份 · 有审计</text>
-    <text x="880" y="512" font-size="15" fill="#7D8590">条目永不删除 · 只标记</text>
+  <!-- ===== dashed write-back spokes ===== -->
+  <g fill="none" stroke="#8B949E" stroke-width="1" stroke-dasharray="5,4">
+    <path d="M 520 168 L 520 314" marker-end="url(#retro-arch-arrow-soft)"/>
+    <path d="M 663.8 296 L 629.1 317" marker-end="url(#retro-arch-arrow-soft)"/>
+    <path d="M 663.8 464 L 629.1 443" marker-end="url(#retro-arch-arrow-soft)"/>
+    <path d="M 520 592 L 520 446" marker-end="url(#retro-arch-arrow-soft)"/>
+    <path d="M 376.2 464 L 410.9 443" marker-end="url(#retro-arch-arrow-soft)"/>
+    <path d="M 376.2 296 L 410.9 317" marker-end="url(#retro-arch-arrow-soft)"/>
   </g>
 
-  <!-- ================= center: the gating bar (vertical divider, green) ================= -->
-  <g>
-    <line x1="420" y1="80" x2="420" y2="460" stroke="#7D8590" stroke-opacity="0.15" stroke-width="1"/>
-    <text x="420" y="620" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" fill="#7D8590">seen_count≥2 或 applied_ok≥1 · 没有证据的经验留在档案库</text>
+  <!-- ===== spoke labels (masks beside the lines, 8px gap) ===== -->
+  <g font-family="ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Menlo, monospace" font-size="12" fill="#8B949E" letter-spacing="0.06em">
+    <rect x="528" y="236" width="60" height="20" rx="2" fill="#0D1117"/>
+    <text x="534" y="250">RAW LOG</text>
+    <rect x="672" y="436" width="76" height="20" rx="2" fill="#0D1117"/>
+    <text x="678" y="450">OK / FAIL</text>
   </g>
+
+  <!-- ===== stations ===== -->
+  <!-- s0 沉淀 (top) -->
+  <rect x="400" y="80" width="240" height="88" rx="6" fill="#161B22" stroke="rgba(230,237,243,0.14)" stroke-width="1"/>
+  <text x="520" y="120" text-anchor="middle" font-family="-apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="20" font-weight="600" fill="#E6EDF3">沉淀</text>
+  <text x="520" y="144" text-anchor="middle" font-family="ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Menlo, monospace" font-size="12" fill="#7D8590">会话收尾 · 写入 log</text>
+
+  <!-- s1 编译 (upper right) -->
+  <rect x="620" y="208" width="240" height="88" rx="6" fill="#161B22" stroke="rgba(230,237,243,0.14)" stroke-width="1"/>
+  <text x="740" y="248" text-anchor="middle" font-family="-apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="20" font-weight="600" fill="#E6EDF3">编译</text>
+  <text x="740" y="272" text-anchor="middle" font-family="ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Menlo, monospace" font-size="12" fill="#7D8590">index · 派生字段</text>
+
+  <!-- s2 应用 (lower right) -->
+  <rect x="620" y="464" width="240" height="88" rx="6" fill="#161B22" stroke="rgba(230,237,243,0.14)" stroke-width="1"/>
+  <text x="740" y="504" text-anchor="middle" font-family="-apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="20" font-weight="600" fill="#E6EDF3">应用</text>
+  <text x="740" y="528" text-anchor="middle" font-family="ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Menlo, monospace" font-size="12" fill="#7D8590">干活时调用 · ok / fail</text>
+
+  <!-- s3 审计 (bottom, focal) -->
+  <rect x="400" y="592" width="240" height="88" rx="6" fill="rgba(63,185,80,0.12)" stroke="#3FB950" stroke-width="1.2"/>
+  <text x="520" y="632" text-anchor="middle" font-family="-apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="20" font-weight="600" fill="#3FB950">审计</text>
+  <text x="520" y="656" text-anchor="middle" font-family="ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Menlo, monospace" font-size="12" fill="#7D8590">六区块报告 · 用户门控</text>
+
+  <!-- s4 升级 (lower left) -->
+  <rect x="180" y="464" width="240" height="88" rx="6" fill="#161B22" stroke="rgba(230,237,243,0.14)" stroke-width="1"/>
+  <text x="300" y="504" text-anchor="middle" font-family="-apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="20" font-weight="600" fill="#E6EDF3">升级</text>
+  <text x="300" y="528" text-anchor="middle" font-family="ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Menlo, monospace" font-size="12" fill="#7D8590">--apply → AGENTS.md</text>
+
+  <!-- s5 精修 (upper left) -->
+  <rect x="180" y="208" width="240" height="88" rx="6" fill="#161B22" stroke="rgba(230,237,243,0.14)" stroke-width="1"/>
+  <text x="300" y="248" text-anchor="middle" font-family="-apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="20" font-weight="600" fill="#E6EDF3">精修</text>
+  <text x="300" y="272" text-anchor="middle" font-family="ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Menlo, monospace" font-size="12" fill="#7D8590">demote · dismiss · scope 回填</text>
+
+  <!-- ===== hub: the one light element (accumulated state) ===== -->
+  <rect x="400" y="320" width="240" height="120" rx="8" fill="#E6EDF3"/>
+  <text x="520" y="376" text-anchor="middle" font-family="-apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="20" font-weight="600" fill="#0D1117">经验库</text>
+  <text x="520" y="402" text-anchor="middle" font-family="ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Menlo, monospace" font-size="12" fill="#57606A">.retro/ · 只追加 · 复利累积</text>
+
+  <!-- ===== legend (horizontal bottom strip) ===== -->
+  <line x1="64" y1="704" x2="976" y2="704" stroke="rgba(230,237,243,0.10)" stroke-width="0.8"/>
+  <text x="64" y="726" fill="#7D8590" font-size="12" font-family="ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Menlo, monospace" letter-spacing="0.14em">LEGEND</text>
+  <line x1="200" y1="722" x2="244" y2="722" stroke="#7D8590" stroke-width="1.2" marker-end="url(#retro-arch-arrow)"/>
+  <text x="256" y="726" fill="#7D8590" font-size="12" font-family="ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Menlo, monospace">主流程 · 顺时针</text>
+  <line x1="432" y1="722" x2="476" y2="722" stroke="#8B949E" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#retro-arch-arrow-soft)"/>
+  <text x="488" y="726" fill="#7D8590" font-size="12" font-family="ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Menlo, monospace">写回知识库</text>
+  <rect x="632" y="712" width="24" height="16" rx="2" fill="rgba(63,185,80,0.12)" stroke="#3FB950" stroke-width="1"/>
+  <text x="668" y="726" fill="#7D8590" font-size="12" font-family="ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Menlo, monospace">用户门控焦点</text>
 </svg>
