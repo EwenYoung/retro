@@ -23,7 +23,7 @@ import datetime
 
 # ---------------------------------------------------------------- 常量
 
-LLM_KEYS = ["id", "title", "tags", "confidence", "raw_ref", "supersedes"]
+LLM_KEYS = ["id", "title", "scope", "tags", "confidence", "raw_ref", "supersedes"]
 SCRIPT_KEYS = [
     "first_seen", "last_seen", "seen_count", "applied_count", "applied_ok",
     "status", "escalated", "superseded_by",
@@ -604,6 +604,11 @@ def _analyze(root):
             warn_list.append((eid, "confidence 缺失或不在词表(low|medium|high): %r" % (conf,)))
         if isinstance(title, str) and len(title) > 60:
             warn_list.append((eid, "title 超过 60 字符 (%d)" % len(title)))
+        scope = data.get("scope")
+        if scope is not None and not isinstance(scope, str):
+            warn_list.append((eid, "scope 应为字符串（可选）: %r" % (scope,)))
+        elif isinstance(scope, str) and len(scope) > 60:
+            warn_list.append((eid, "scope 超过 60 字符 (%d)" % len(scope)))
         body_n = _body_line_count(rec["body_lines"])
         if body_n > 10:
             warn_list.append((eid, "正文超过 10 行 (%d)" % body_n))
@@ -1207,6 +1212,10 @@ def _escalate_apply(root, ids, force=False):
             rule_text = title.strip()
         else:
             rule_text = next((ln.strip() for ln in rec["body_lines"] if ln.strip()), "")
+        # 有 scope 时规则行保留适用条件：- <title>（<scope>） [id]
+        scope = rec["data"].get("scope")
+        if isinstance(scope, str) and scope.strip():
+            rule_text += "（%s）" % scope.strip()
         rule_lines.append((i, rule_text))
     reasons = "; ".join("%s(%d分)" % (c["id"], c["score"]) for c in cand_map.values() if c["id"] in ids)
     prev_count = rule_count

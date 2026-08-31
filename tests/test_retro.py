@@ -38,7 +38,7 @@ def write_entry(root, fm, body):
     entries_dir = root / ".retro" / "entries"
     entries_dir.mkdir(parents=True, exist_ok=True)
     eid = fm["id"]
-    keys = ["id", "title", "tags", "confidence", "raw_ref", "supersedes"]
+    keys = ["id", "title", "scope", "tags", "confidence", "raw_ref", "supersedes"]
     if "escalated" in fm:
         keys.append("escalated")
     lines = ["---"]
@@ -277,3 +277,42 @@ def test_applied_line_missing_id_warns(tmp_path, capsys):
     rc, out = capture(root, capsys, "check")
     assert rc == 0  # warning 不升级为 error
     assert "applied 行指向不存在的条目 id: 20260824-999" in out
+
+
+# ---------------------------------------------------------------- scope 字段
+
+
+def test_scope_included_in_applied_rule_line(tmp_path):
+    """有 scope 的条目 escalate --apply 后，AGENTS.md 规则行含（scope）且行尾 [id] 正确。"""
+    root = tmp_path
+    log = [
+        "## s1 段落标题\n\n> entry: %s\n" % EID,
+        "## s2 同坑再现\n\n> seen-again: %s\n" % EID,
+    ]
+    write_log(root, log)
+    fm = base_fm()
+    fm["scope"] = "Git Bash / wsl 下"
+    write_entry(root, fm, "结论句。\n\n- **症状**：x\n- **解法**：y\n")
+    write_agents(root)
+    assert run(root, "index") == 0
+    assert run(root, "check") == 0
+
+    assert run(root, "escalate", "--apply", EID) == 0
+    content = (root / "AGENTS.md").read_text(encoding="utf-8")
+    assert "- 测试结论标题（Git Bash / wsl 下） [%s]" % EID in content
+
+
+def test_scope_over_60_chars_warns(tmp_path, capsys):
+    """scope 超过 60 字符 → check 报 warning（不是 error）。"""
+    root = tmp_path
+    log = ["## s1 段落标题\n\n> entry: %s\n" % EID]
+    write_log(root, log)
+    fm = base_fm()
+    fm["scope"] = "适" * 61
+    write_entry(root, fm, "结论句。\n\n- **症状**：x\n- **解法**：y\n")
+    write_agents(root)
+    assert run(root, "index") == 0
+
+    rc, out = capture(root, capsys, "check")
+    assert rc == 0
+    assert "scope 超过 60 字符 (61)" in out
