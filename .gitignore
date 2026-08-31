@@ -1,0 +1,9 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# 备份与临时文件
+AGENTS.md.bak.*
+.retro-*.tmp
