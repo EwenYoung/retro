@@ -1,109 +1,184 @@
-# retro
+<h1 align="center">retro</h1>
 
-> 把 Agent 会话经验编译成持久知识，再蒸馏为可复用的规则——一个带验证门控的 Agent 记忆进化系统。
+<p align="center">
+  <strong>把 Agent 会话经验编译成持久知识，再蒸馏为可复用的规则</strong>
+  <br />
+  <em>经验沉淀 · 验证门控 · 定期审计 · 规则升降级</em>
+</p>
 
-`retro` 是一个 [Agent Skill](https://agent-skills.dev)（SKILL.md + 确定性脚本），解决一个具体问题：**Agent 每次会话踩过的坑，下次会话还得再踩一遍**。
+<p align="center">
+  <a href="#quick-start"><img src="https://img.shields.io/badge/Quick_Start-4CAF50?style=for-the-badge" alt="Quick Start" /></a>
+  <a href="#contributing"><img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License" /></a>
+</p>
 
-灵感来自 Google Research 的 [WikiSkill](https://arxiv.org/abs/2608.27454)（arXiv:2608.27454）：在「原始经验」和「可执行规则」之间插入一个持久知识层，让经验被持续编译、沉淀，支撑规则的复利式进化。
+<p align="center">
+  <img src="https://img.shields.io/badge/Python_3-3776AB?style=flat&logo=python&logoColor=white" alt="Python 3" />
+  <img src="https://img.shields.io/badge/Pytest-0A9EDC?style=flat&logo=pytest&logoColor=white" alt="Pytest" />
+  <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/Claude_Code-D97757?style=flat&logo=claude&logoColor=white" alt="Claude Code" /></a>
+  <a href="https://cursor.sh"><img src="https://img.shields.io/badge/Cursor-000000?style=flat&logo=cursor&logoColor=white" alt="Cursor" /></a>
+</p>
 
-## 核心思想
+---
 
-三层架构 + 双向流动：
+## Features
 
-```
-会话结束 ──沉淀──▶  .retro/log/        原始摘录（唯一真相源，只追加）
-                        │  index
-                        ▼
-                   .retro/entries/     结构化知识（症状/原因/解法/适用条件）
-                        │  escalate（验证门控）
-                        ▼
-                   AGENTS.md 规则区    常驻前台（≤12 条，每个会话都加载）
-
-会话进行中 ──applied: ok/fail──▶ 逆向反馈：哪条经验真的管用？
-定期 ──audit──▶ 全库审计：升级/降级/失效/合并/驳回
-```
-
-与 WikiSkill 的机制对应：
-
-| WikiSkill | retro |
+| Feature | Description |
 |---|---|
-| raw 层（执行轨迹） | `.retro/log/` 会话摘录 |
-| wiki 层（持久知识） | `.retro/entries/` 结构化条目 |
-| skills 层（可执行规则） | `AGENTS.md` 规则区 |
-| skill-impact.md（干预审计） | `> applied: <id> ok/fail` 引用行 + `audit.log.jsonl` |
-| 验证门控 | `applied_ok≥1` 或 `seen_count≥2` 才能升级 |
-| 提案者 + 回滚 | `audit` 六区块报告 + 用户确认后执行 |
+| 经验沉淀 | 会话收尾时回顾本会话，把可复用的坑与策略写入项目 `.retro/` 知识库；只追加不删除，log 是唯一真相源 |
+| 验证门控 | 经验升级到 `AGENTS.md` 常驻规则区需要证据：被重复踩过（seen_count≥2）或被实际应用且有效（applied_ok≥1） |
+| 双层记忆 | `.retro/` 是按需查阅的档案库（不限量），`AGENTS.md` 是每个会话都加载的常驻前台（上限 12 条），升降级双向流动 |
+| 确定性记账 | 计数、去重、升降级、审计日志全部由脚本完成，零 LLM 参与——LLM 只负责判断与内容 |
+| 审计轮 | `audit` 子命令输出六区块只读报告：健康检查 / 升级候选 / 降级候选 / 失效候选 / 重复合并 / 审计状态 |
+| 驳回记忆 | 审计中被驳回的候选 7 天内静默，之后自动重新浮出并标注「请复查」，不重复打扰也不永久遗漏 |
 
-## 快速开始
+## Quick Start
+
+### Prerequisites
+
+- Python 3.10+
+- 一个使用 agent（Claude Code / Cursor 等）开发的项目
+
+### Install
+
+把本仓库的 `SKILL.md` 与 `scripts/retro.py` 复制到你的 agent 技能目录：
 
 ```bash
-# 1. 在目标项目安装技能目录（SKILL.md + scripts/retro.py）
-
-# 2. 会话收尾时，让 agent 沉淀经验（触发词：沉淀一下 / 复盘 / retro）
-#    agent 会写 .retro/log/ + .retro/entries/，然后：
-
-retro.py --root <项目目录> index    # 补齐派生字段、重建索引
-retro.py --root <项目目录> check    # 校验一致性，0 error 为验收线
-
-# 3. 查看哪些经验值得常驻前台
-retro.py --root <项目目录> escalate          # 干跑：列升级候选+理由
-retro.py --root <项目目录> escalate --apply <id>   # 确认后升级到 AGENTS.md
-
-# 4. 定期审计（≥7 天或新增 ≥10 条或规则区 ≥10/12）
-retro.py --root <项目目录> audit             # 六区块只读报告
-retro.py --root <项目目录> audit --close "总结" --dismissed <id,id>  # 落账
+git clone https://github.com/EwenYoung/retro.git
+mkdir -p ~/.agents/skills
+cp -r retro ~/.agents/skills/
 ```
 
-## 子命令
+### Set Up
 
-| 子命令 | 作用 | 是否写 |
-|---|---|---|
-| `index` | 补齐派生字段、重建 INDEX.md | 写 |
-| `check` | 校验条目一致性；含 error 退出 1 | 写 status |
-| `stats` | 统计（条目/状态/applied/tag/规则数），零 LLM | 只读 |
-| `escalate` | 列候选 / `--apply` 升级 / `--demote` 降级 / `--force` | 写 |
-| `reconcile` | 检查 AGENTS.md 与条目 escalated 的漂移 | 只读 |
-| `audit` | 审计轮：六区块只读报告 / `--close` 落账 | 只读/追加 |
+在目标项目的 `AGENTS.md` 中加入经验规则标记区：
 
-## 设计原则
+```markdown
+## 经验教训
 
-**分工**：LLM 只做判断与内容（写了什么经验、值不值得升级），脚本做全部确定性账务（计数、去重、升降级、审计日志）——计数永远不出错，内容永远有人负责。
+<!-- retro-managed-start -->
+<!-- retro-managed-end -->
+```
 
-**只追加，不删除**：log 和两条审计日志（escalation/audit）只追加；冲突用 `supersedes` 标记；降级只是退出前台，条目永回档案库。旧经验被推翻不会丢失——它会告诉你「什么曾经是对的」。
+### Run
 
-**验证门控**：升级到 AGENTS.md 需要证据——要么被重复踩过（`seen_count≥2`），要么被实际应用且有效（`applied_ok≥1`）。没有证据的经验留在档案库里，不占常驻前台的名额。
+让 agent 复盘当前会话（说「沉淀一下」「记一下这次的坑」或「retro」），随后校验：
 
-**门控永远在人手里**：脚本是干跑报告 + 确认执行两段式；`--apply`/`--demote`/`--close` 都需要用户显式确认；一切升降级有备份、有审计日志。
+```bash
+retro.py --root <项目目录> check
+```
 
-**防污染**：会话中从旧条目读来的内容不算新经验——复用不是新知，写进去会污染「这条经验被踩过几次」的统计。
+## Usage
 
-## 数据结构
+### 沉淀会话经验
+
+会话收尾时触发（也可由 agent 在完成硬仗后主动触发），agent 回顾会话找五类信号——失败的尝试、用户的纠正、找了很久才发现的信息、被推翻的假设、稳定奏效的策略——按收录门槛（可复用 / 非显而易见 / 跨会话有效）写入：
+
+```bash
+# agent 写入后由脚本补齐派生字段
+retro.py --root <项目目录> index
+retro.py --root <项目目录> check   # 0 error 为验收线
+```
+
+### 升级经验为常驻规则
+
+```bash
+retro.py --root <项目目录> escalate               # 干跑：列候选与逐项理由
+retro.py --root <项目目录> escalate --apply <id>   # 用户确认后升级到 AGENTS.md
+```
+
+升级门槛：`status=verified` 且（`seen_count≥2` 或 `applied_ok≥1`）且未被 superseded。评分 = `seen_count×2 + applied_ok×2` + 全局 tag 加成 + 简短加成。
+
+### 记录经验的应用结果
+
+新会话实际采用了某条经验时，agent 在 log 段落追加一行引用（ok = 有效，fail = 没解决）：
+
+```markdown
+> applied: 20260824-001 ok
+```
+
+applied 数据是升级门槛的第二条证据通道，也是审计轮判断经验是否过时的依据。
+
+### 定期审计
+
+```bash
+retro.py --root <项目目录> audit    # 六区块只读报告，不写任何状态
+```
+
+距上次审计 ≥7 天、期间新增 ≥10 条、或规则区 ≥10/12 时建议跑一轮。LLM 语义复核报告中的降级/失效/重复候选，决策清单经用户确认后走 `escalate --apply/--demote` 执行，最后 `audit --close "总结" --dismissed <id,...>` 落账。
+
+## Architecture
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'fontSize': '14px'}}}%%
+flowchart TD
+    A[会话结束<br/>五类信号回顾] --> B[.retro/log/<br/>原始摘录 · 唯一真相源]
+    B -->|index| C[.retro/entries/<br/>结构化条目 + 派生字段]
+    C -->|escalate --apply<br/>seen≥2 或 applied_ok≥1| D[AGENTS.md 规则区<br/>常驻前台 ≤ 12 条]
+    C -->|> applied: id ok/fail| C
+    D -->|escalate --demote| C
+    E[audit 六区块报告<br/>用户确认门控] -->|升级/降级/驳回| C
+    E -->|close 落账| F[(audit.log.jsonl<br/>审计留痕 + 驳回记忆)]
+    D --> G[(escalation.log.jsonl<br/>升降级审计)]
+
+    classDef start fill:#3B82F6,stroke:#2563EB,color:#fff,stroke-width:2px
+    classDef data fill:#8B5CF6,stroke:#7C3AED,color:#fff,stroke-width:2px
+    classDef rules fill:#F97316,stroke:#EA580C,color:#fff,stroke-width:2px
+    classDef process fill:#10B981,stroke:#059669,color:#fff,stroke-width:2px
+    classDef logstore fill:#06B6D4,stroke:#0891B2,color:#fff,stroke-width:2px
+
+    class A start
+    class B,C data
+    class D rules
+    class E process
+    class F,G logstore
+```
+
+- **向下流动（沉淀）**：会话 → log → entries → AGENTS.md，每一步有门槛
+- **向上流动（反馈）**：`applied ok/fail` 引用行记录经验的真实应用效果，驱动下一轮升级/失效判断
+- **回环（审计）**：audit 定期把全库拉出来体检，验证过的经验升级、过时的降级、驳回的有记忆
+
+## Project Structure
+
+```
+retro/
+├── SKILL.md                   # 技能指令：回顾信号、收录门槛、审计轮流程
+├── scripts/
+│   └── retro.py               # 确定性脚本：index / check / stats / escalate / reconcile / audit
+├── tests/
+│   └── test_retro.py          # 24 个集成测试
+├── .gitignore
+└── .gitattributes
+```
+
+数据落在目标项目（不落在本仓库）：
 
 ```
 <项目>/
-├── AGENTS.md                  # 规则区（retro-managed 标记区，≤12 条）
+├── AGENTS.md                  # 经验规则区（retro-managed 标记区，≤12 条）
 └── .retro/
-    ├── log/YYYY-MM-DD.md      # 会话原始摘录（唯一真相源）
+    ├── log/YYYY-MM-DD.md      # 会话原始摘录（只追加）
     ├── entries/YYYYMMDD-NNN.md  # 结构化条目（YAML frontmatter + 正文）
-    ├── INDEX.md               # 脚本生成的索引（含 seen/applied/escalated）
-    ├── escalation.log.jsonl   # 升降级审计
-    └── audit.log.jsonl        # 审计轮次记录（含 dismissed 驳回记忆）
+    ├── INDEX.md               # 脚本生成的索引
+    ├── escalation.log.jsonl   # 升降级审计日志
+    └── audit.log.jsonl        # 审计轮次记录
 ```
 
-条目 frontmatter：内容字段（`id/title/scope/tags/confidence/raw_ref/supersedes`）由 agent 撰写，派生字段（`first_seen/last_seen/seen_count/applied_count/applied_ok/status/escalated/superseded_by`）由脚本写入。
+## Tech Stack
 
-## 实战规模
+| Layer | Technology | Purpose |
+|---|---|---|
+| Language | Python 3 | 单文件确定性脚本，严格 YAML 子集解析，零第三方依赖 |
+| Testing | Pytest | 24 个集成测试：派生字段、门槛评分、审计区块、只读纪律（文件 hash 比对）、GBK stdout 回归 |
+| Host | Claude Code / Cursor | 技能由 agent 加载执行，SKILL.md 是全部行为规范 |
 
-首个生产项目（Chrome MV3 扩展，活跃开发中）：25 条经验、10 条常驻规则、首轮审计 24/25 条补齐 scope、5 条降级候选经人工复核全部保留、驳回记忆正常静默。
+## Contributing
 
-## 测试
-
-```bash
-uv run pytest tests/ -q
-```
-
-24 个集成测试覆盖：log 解析、派生字段、词表校验、升级门槛与评分、scope 拼接、audit 六区块、dismissed 静默/浮出、只读纪律（文件 hash 比对）、真实 stdout 编码（subprocess 回归）。
+1. Fork 仓库
+2. 建分支（`git checkout -b feature/x`）
+3. 提交（中文 conventional commits：`feat:` / `fix:` / `docs:`）
+4. 跑 `uv run pytest tests/ -q` 确认全绿
+5. 发 Pull Request
 
 ## License
 
-MIT
+暂未添加 LICENSE 文件。Add a LICENSE to clarify project licensing.
