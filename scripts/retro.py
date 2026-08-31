@@ -32,7 +32,7 @@ SCRIPT_KEYS = [
 FIELD_ORDER = LLM_KEYS + SCRIPT_KEYS
 ALLOWED_KEYS = set(LLM_KEYS) | set(SCRIPT_KEYS)
 
-VALID_TAGS = {"paths", "env", "tooling", "workflow", "domain", "pitfall", "patterns"}
+VALID_TAGS = {"paths", "env", "tooling", "workflow", "domain", "pitfall", "success", "patterns"}
 VALID_STATUS = {"new", "verified", "needs_review", "superseded"}
 VALID_CONFIDENCE = {"low", "medium", "high"}
 

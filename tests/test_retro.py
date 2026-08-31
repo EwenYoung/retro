@@ -586,3 +586,23 @@ def test_audit_stdout_encoding_safe_subprocess(tmp_path):
     assert proc.returncode == 0, proc.stderr
     assert "! 规则区 10/12" in proc.stdout
     assert "<->" in proc.stdout  # ⑤ 区块格式
+
+
+# ---------------------------------------------------------------- 方向3：success tag
+
+
+def test_success_tag_in_vocabulary(tmp_path, capsys):
+    """success 加入受控词表：带 success tag 的条目 check 不再报词表外警告。"""
+    root = tmp_path
+    log = ["## s1 段落标题\n\n> entry: %s\n" % EID]
+    write_log(root, log)
+    fm = base_fm()
+    fm["tags"] = ["patterns", "success"]
+    write_entry(root, fm, "结论句。\n\n- **策略**：先锚点后补偿\n")
+    write_agents(root)
+    assert run(root, "index") == 0
+
+    rc, out = capture(root, capsys, "check")
+    assert rc == 0
+    assert "词表外" not in out
+    assert "[warnings] 0" in out
