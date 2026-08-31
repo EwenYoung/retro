@@ -22,12 +22,13 @@ description: Review the session at wrap-up and distill pitfalls and major discov
 
 ## 第一步：回顾本会话
 
-只回顾当前会话，重点找四类信号：
+只回顾当前会话，重点找五类信号：
 
 - **失败的尝试**：排查了很久才解决的报错；走了弯路、被证明行不通的做法——「什么不行」和「什么行」同样有价值
 - **用户的纠正**：用户指出做错了什么、要求改方向的地方
 - **找了很久才发现的信息**：关键文件/配置的实际位置、文档没写的行为、隐藏的架构约束
 - **被推翻的假设**：一开始以为是 X，后来发现其实是 Y
+- **稳定奏效的策略**：多次验证有效的排查路径/修复模式/自验方法（如「改样式先查 transition」「DOM 重依赖用 jiti 自验」）——成功模式与失败模式同样值得沉淀，tag 打 `success` 而非 `pitfall`，audit 时不会进失效候选
 
 ## 收录门槛
 
@@ -37,7 +38,7 @@ description: Review the session at wrap-up and distill pitfalls and major discov
 2. **非显而易见** —— 操作性标准：「本项目内实际踩坑且被 review/用户纠正过」；不是看代码或文档就能直接得出的
 3. **跨会话有效** —— 不是本会话一次性的事务细节
 
-不收录：任务进度细节（那是 handoff 技能的职责）、代码里一眼可见的事实、未经本项目验证的泛泛最佳实践。回顾完若没有值得沉淀的，直接告诉用户「本次没有值得沉淀的经验」，不要硬凑——这是正常结果，不是失败。
+不收录：任务进度细节（那是 handoff 技能的职责）、代码里一眼可见的事实、未经本项目验证的泛泛最佳实践。**特别地：本会话中从 `.retro/` 旧条目或 AGENTS.md 规则读到的内容不算新经验**——那是已有知识的复用，写入 log 会污染「这条经验被踩过几次」的统计（WikiSkill 消融实验的教训：知识来源被污染会降低数据对技能开发的诊断价值）。回顾完若没有值得沉淀的，直接告诉用户「本次没有值得沉淀的经验」，不要硬凑——这是正常结果，不是失败。
 
 ## 第二步：写入
 
@@ -76,7 +77,7 @@ retro.py --root <项目目录> check   # 校验条目一致性，0 error 为验�
 id: "20260824-001"       # YYYYMMDD-NNN（当日已有最大序号+1）
 title: "Git Bash 路径必须用正斜杠"   # 一句话结论，≤60 字
 scope: "Git Bash / wsl 下"   # 可选：该经验何时适用，≤60 字；确无适用条件限制时可省略
-tags: [paths]            # 受控词表：paths|env|tooling|workflow|domain|pitfall|patterns
+tags: [paths]            # 受控词表：paths|env|tooling|workflow|domain|pitfall|success|patterns
 confidence: high         # low|medium|high
 raw_ref: ["log/2026-08-24.md#s1"]   # 溯源到 log 段落
 supersedes: null         # 或旧条目 id（本条推翻了旧条目）
