@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="#quick-start"><img src="https://img.shields.io/badge/Quick_Start-4CAF50?style=for-the-badge" alt="Quick Start" /></a>
+  <a href="#usage"><img src="https://img.shields.io/badge/Usage-4CAF50?style=for-the-badge" alt="Usage" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License" /></a>
 </p>
 
@@ -38,32 +38,17 @@ Clone this repository into your `~/.agents/skills` directory:
 git clone https://github.com/EwenYoung/retro.git ~/.agents/skills/retro
 ```
 
-Add the managed rules block to your project's `AGENTS.md`:
-
-```markdown
-## Lessons
-
-<!-- retro-managed-start -->
-<!-- retro-managed-end -->
-```
+That's it — everything after installation is handled automatically by the agent. No configuration needed.
 
 ## Usage
 
-### Talk to Your Agent
-
-At session wrap-up, say:
+At session wrap-up, tell the agent:
 
 ```
 retro
 ```
 
-Variants like "distill this session" or "note today's pitfalls" also work. The agent will proactively suggest a retro after a substantial task — a tough bug fix, an environment setup, a long debugging session. When there is nothing worth recording, it says so instead of padding.
-
-If a past lesson was actually used during the session, mention it at wrap-up:
-
-```
-The lesson about X worked today
-```
+Variants like "distill this session" or "note today's pitfalls" also work. Say nothing and the agent will still proactively suggest a retro after a substantial task — a tough bug fix, an environment setup, a long debugging session. When there is nothing worth recording, it says so instead of padding.
 
 ### What the Agent Does Behind the Scenes
 
@@ -71,7 +56,7 @@ Once triggered, the agent:
 
 1. **Reviews the session** for five signal types: failed attempts, user corrections, hard-to-find information, overturned assumptions, and reliably effective strategies
 2. **Applies the inclusion bar**: reusable, non-obvious, valid across sessions — all three must hold. Content read from existing entries does not count as new experience (keeps statistics clean)
-3. **Writes to `.retro/log/`** (raw excerpts, append-only) and `.retro/entries/` (structured entries), recording `seen-again` for recurring pitfalls and `applied: ok/fail` for lessons put to use
+3. **Writes to `.retro/log/`** (raw excerpts, append-only) and `.retro/entries/` (structured entries), recording `seen-again` for recurring pitfalls. When a past lesson is actually used during work, the agent judges on its own whether it worked and records `applied: ok/fail` — lessons are consulted automatically during real work, no user prompting needed
 4. **Runs the bookkeeping script**: `retro.py index` fills derived fields, `retro.py check` validates (0 errors is the acceptance line)
 5. **Decides on promotion**: `retro.py escalate` lists candidates with per-item reasoning; after your confirmation, `--apply` promotes entries into the `AGENTS.md` rule section (capped at 12; oldest gets demoted first when full)
 
@@ -79,13 +64,7 @@ The promotion bar is hard: an entry must be `verified` and either seen at least 
 
 ### Periodic Audits
 
-When the last audit is ≥7 days old, ≥10 new entries have accumulated, or the rule section is ≥10/12 full, run a round:
-
-```
-Audit the experience base
-```
-
-The agent runs `retro.py audit` to get a six-block read-only report (health / promote candidates / demote candidates / stale candidates / merge candidates / audit status), reviews each candidate semantically, and hands you a decision list — promote, demote, merge, or dismiss. Nothing executes without your confirmation. Finally, `audit --close` records the round. Dismissed candidates stay silent for 7 days, then resurface flagged for re-review.
+When the last audit is ≥7 days old, ≥10 new entries have accumulated, or the rule section is ≥10/12 full, the agent suggests an audit at wrap-up. It runs `retro.py audit` to get a six-block read-only report (health / promote candidates / demote candidates / stale candidates / merge candidates / audit status), reviews each candidate semantically, and hands you a decision list — promote, demote, merge, or dismiss. Nothing executes without your confirmation. Finally, `audit --close` records the round. Dismissed candidates stay silent for 7 days, then resurface flagged for re-review.
 
 ## Architecture
 

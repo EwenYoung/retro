@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="#快速开始"><img src="https://img.shields.io/badge/快速开始-4CAF50?style=for-the-badge" alt="Quick Start" /></a>
+  <a href="#使用方法"><img src="https://img.shields.io/badge/使用方法-4CAF50?style=for-the-badge" alt="Usage" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License" /></a>
 </p>
 
@@ -38,32 +38,17 @@
 git clone https://github.com/EwenYoung/retro.git ~/.agents/skills/retro
 ```
 
-在目标项目的 `AGENTS.md` 中加入经验规则标记区：
-
-```markdown
-## 经验教训
-
-<!-- retro-managed-start -->
-<!-- retro-managed-end -->
-```
+装好即用——之后所有事都由 agent 自动完成，无需配置。
 
 ## 使用方法
 
-### 对 agent 说
-
-会话收尾时，对 agent 说：
+会话收尾时对 agent 说一句：
 
 ```
 沉淀一下
 ```
 
-也可以说「复盘」「总结经验」「记一下这次的坑」，或者什么都不说——agent 完成一场硬仗（修了个棘手 bug、搭好环境、长调试收尾）后会主动建议沉淀；没什么可记时它会说「本次没有值得沉淀的经验」，不硬凑。
-
-会话进行中实际用了某条旧经验，收尾时补一句：
-
-```
-这次用了 xxx 那条经验，管用
-```
+也可以说「复盘」「总结经验」「记一下这次的坑」，或者什么都不说——agent 完成一场硬仗（修了个棘手 bug、搭好环境、长调试收尾）后会主动建议沉淀；没什么可记时它会直接说「本次没有值得沉淀的经验」，不硬凑。
 
 ### agent 背后的工作流程
 
@@ -71,7 +56,7 @@ git clone https://github.com/EwenYoung/retro.git ~/.agents/skills/retro
 
 1. **回顾本会话**，找五类信号：失败的尝试、用户的纠正、找了很久才发现的信息、被推翻的假设、稳定奏效的策略
 2. **按收录门槛过滤**：可复用、非显而易见、跨会话有效，三条同时满足才收录——从旧条目读来的内容不算新经验（防统计污染）
-3. **写入 `.retro/log/`**（原始摘录，只追加）与 `.retro/entries/`（结构化条目），同坑再现记 `seen-again`，实际用过记 `applied: ok/fail`
+3. **写入 `.retro/log/`**（原始摘录，只追加）与 `.retro/entries/`（结构化条目），同坑再现记 `seen-again`；会话中实际沿用了某条旧经验时，agent 自行判断是否管用并记 `applied: ok/fail`——经验是在干活时自动调用的，不需要用户提醒
 4. **跑脚本记账**：`retro.py index` 补派生字段，`retro.py check` 校验（0 error 为验收线）
 5. **升级决策**：`retro.py escalate` 列出候选与逐项理由，经你确认后 `--apply` 升级进 `AGENTS.md` 规则区（上限 12 条，满了先降级最旧的）
 
@@ -79,13 +64,7 @@ git clone https://github.com/EwenYoung/retro.git ~/.agents/skills/retro
 
 ### 定期审计
 
-距上次审计 ≥7 天、期间新增 ≥10 条、或规则区 ≥10/12 时，建议跑一轮：
-
-```
-复盘一下经验库 / 跑一轮审计
-```
-
-agent 执行 `retro.py audit` 得到六区块只读报告（健康检查 / 升级候选 / 降级候选 / 失效候选 / 重复合并 / 审计状态），逐条语义复核后给你决策清单——升、降、合并、驳回，你确认后才执行，最后 `audit --close` 落账。被驳回的候选 7 天内静默，之后自动重新浮出并标注「请复查」。
+距上次审计 ≥7 天、期间新增 ≥10 条、或规则区 ≥10/12 时，agent 会在收尾时建议跑一轮审计。执行 `retro.py audit` 得到六区块只读报告（健康检查 / 升级候选 / 降级候选 / 失效候选 / 重复合并 / 审计状态），agent 逐条语义复核后给你决策清单——升、降、合并、驳回，你确认后才执行，最后 `audit --close` 落账。被驳回的候选 7 天内静默，之后自动重新浮出并标注「请复查」。
 
 ## 架构
 
