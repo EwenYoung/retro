@@ -39,12 +39,6 @@ That's it — everything after installation is handled automatically by the agen
   <img src="./assets/readme/section-usage.svg" width="100%" alt="Usage section header: tell the agent to retro">
 </p>
 
-At session wrap-up, tell the agent:
-
-```
-retro
-```
-
 Variants like "distill this session" or "note today's pitfalls" also work. Say nothing and the agent will still proactively suggest a retro after a substantial task — a tough bug fix, an environment setup, a long debugging session. When there is nothing worth recording, it says so instead of padding.
 
 ### What the Agent Does Behind the Scenes
@@ -69,29 +63,9 @@ When the last audit is ≥7 days old, ≥10 new entries have accumulated, or the
   <img src="./assets/readme/section-architecture.svg" width="100%" alt="Architecture section header">
 </p>
 
-```mermaid
-flowchart TD
-    A["Session ends<br/>five signal types"] -->|"capture"| B[".retro/log/<br/>raw excerpts · single source of truth"]
-    B -->|"index"| C[".retro/entries/<br/>structured entries + derived fields"]
-    C -->|"escalate --apply<br/>seen≥2 or applied_ok≥1"| D["AGENTS.md rules<br/>resident section ≤ 12"]
-    C -->|"applied: ok/fail"| C
-    D -->|"escalate --demote"| C
-    E["audit six-block report<br/>user-confirmed gating"] -->|"promote / demote / dismiss"| C
-    E -->|"close"| F["audit.log.jsonl<br/>audit trail + dismissal memory"]
-    D --> G["escalation.log.jsonl<br/>promotion/demotion log"]
-
-    classDef start fill:#3B82F6,stroke:#2563EB,color:#fff,stroke-width:2px
-    classDef data fill:#8B5CF6,stroke:#7C3AED,color:#fff,stroke-width:2px
-    classDef rules fill:#F97316,stroke:#EA580C,color:#fff,stroke-width:2px
-    classDef process fill:#10B981,stroke:#059669,color:#fff,stroke-width:2px
-    classDef logstore fill:#06B6D4,stroke:#0891B2,color:#fff,stroke-width:2px
-
-    class A start
-    class B,C data
-    class D rules
-    class E process
-    class F,G logstore
-```
+<p align="center">
+  <img src="./assets/readme/architecture.svg" width="100%" alt="retro architecture: session experience is captured into the log, compiled into entries by index, and promoted to resident AGENTS.md rules through verified gating. The audit loop on the right drives promotion (green), demotion (red), and dismissal (gray) verdicts, closing each round into the jsonl logs.">
+</p>
 
 - **Downward flow (capture)**: session → log → entries → AGENTS.md, with a bar at every step
 - **Upward flow (feedback)**: `applied ok/fail` lines record how lessons perform in real use, driving the next round of promotion/staleness decisions

@@ -39,12 +39,6 @@ git clone https://github.com/EwenYoung/retro.git ~/.agents/skills/retro
   <img src="./assets/readme/section-usage.svg" width="100%" alt="使用方法区块头：对 agent 说「沉淀一下」">
 </p>
 
-会话收尾时对 agent 说一句：
-
-```
-沉淀一下
-```
-
 也可以说「复盘」「总结经验」「记一下这次的坑」，或者什么都不说——agent 完成一场硬仗（修了个棘手 bug、搭好环境、长调试收尾）后会主动建议沉淀；没什么可记时它会直接说「本次没有值得沉淀的经验」，不硬凑。
 
 ### agent 背后的工作流程
@@ -69,29 +63,9 @@ git clone https://github.com/EwenYoung/retro.git ~/.agents/skills/retro
   <img src="./assets/readme/section-architecture.svg" width="100%" alt="架构区块头">
 </p>
 
-```mermaid
-flowchart TD
-    A["会话结束<br/>五类信号回顾"] -->|"沉淀"| B[".retro/log/<br/>原始摘录 · 唯一真相源"]
-    B -->|"index"| C[".retro/entries/<br/>结构化条目 + 派生字段"]
-    C -->|"escalate --apply<br/>seen≥2 或 applied_ok≥1"| D["AGENTS.md 规则区<br/>常驻前台 ≤ 12 条"]
-    C -->|"applied: ok/fail"| C
-    D -->|"escalate --demote"| C
-    E["audit 六区块报告<br/>用户确认门控"] -->|"升级 / 降级 / 驳回"| C
-    E -->|"close 落账"| F["audit.log.jsonl<br/>审计留痕 + 驳回记忆"]
-    D --> G["escalation.log.jsonl<br/>升降级审计"]
-
-    classDef start fill:#3B82F6,stroke:#2563EB,color:#fff,stroke-width:2px
-    classDef data fill:#8B5CF6,stroke:#7C3AED,color:#fff,stroke-width:2px
-    classDef rules fill:#F97316,stroke:#EA580C,color:#fff,stroke-width:2px
-    classDef process fill:#10B981,stroke:#059669,color:#fff,stroke-width:2px
-    classDef logstore fill:#06B6D4,stroke:#0891B2,color:#fff,stroke-width:2px
-
-    class A start
-    class B,C data
-    class D rules
-    class E process
-    class F,G logstore
-```
+<p align="center">
+  <img src="./assets/readme/architecture.svg" width="100%" alt="retro 架构图：会话经验沉淀为 log，index 编译为 entries，验证门控升级为 AGENTS.md 常驻规则；右侧 audit 审计轮以绿/红/灰三条裁决线驱动升级、降级与驳回，close 落账到 jsonl 日志。">
+</p>
 
 - **向下流动（沉淀）**：会话 → log → entries → AGENTS.md，每一步有门槛
 - **向上流动（反馈）**：`applied ok/fail` 引用行记录经验的真实应用效果，驱动下一轮升级/失效判断
