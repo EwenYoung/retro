@@ -28,7 +28,7 @@
     <text x="0" y="130" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="27" font-weight="600" fill="#E6EDF3">会话经验 → 持久知识 → 可复用规则</text>
     <text x="0" y="168" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="20" fill="#7D8590">沉淀 · 验证门控 · 定期审计 · 只追加，不遗忘</text>
     <rect x="0" y="196" width="118" height="34" rx="8" fill="none" stroke="#7D8590" stroke-opacity="0.45"/>
-    <text x="59" y="219" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#7D8590">24 tests</text>
+    <text x="59" y="219" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#7D8590">38 tests</text>
     <rect x="130" y="196" width="126" height="34" rx="8" fill="none" stroke="#7D8590" stroke-opacity="0.45"/>
     <text x="193" y="219" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18" fill="#7D8590">zero deps</text>
     <rect x="268" y="196" width="126" height="34" rx="8" fill="none" stroke="#7D8590" stroke-opacity="0.45"/>

@@ -5,20 +5,21 @@ description: Review the session at wrap-up and distill pitfalls and major discov
 
 # Retro：会话经验沉淀
 
-任务收尾时回顾本会话，把可复用的经验写入项目 `.retro/` 经验库；特别重要的经验升级到项目 `AGENTS.md`。经验库的读者是未来的会话（agent 和用户），不是当下——每一条都必须值得未来花时间读。
+任务收尾时回顾本会话，把可复用的经验写入项目 `.retro/` 经验库，把客观状态存入项目事实库 `.retro/facts.json`；特别重要的经验升级到项目 `AGENTS.md`。经验库的读者是未来的会话（agent 和用户），不是当下——每一条都必须值得未来花时间读。
 
-记账、去重、计数、升降级等确定性操作由 `retro.py` 完成（脚本拥有派生字段），本技能只负责判断与内容。脚本路径：
+记账、去重、计数、升降级、事实状态迁移等确定性操作由 `retro.py` 完成（脚本拥有派生字段），本技能只负责判断与内容。脚本路径：
 
 ```
 ~/.agents/skills/retro/scripts/retro.py --root <项目目录> <子命令>
 ```
 
-## 四条不变量
+## 五条不变量
 
 1. **log/ 是唯一真相源**：`.retro/log/*.md` 追加式记录各会话原始摘录，事后永不修改。
 2. **entries 可由 log 重建**：`.retro/entries/*.md` 是结构化条目，损坏可据 log 段落手工重写（`index` 只补派生字段，不生成条目），代价只是「重新结构化」，不是记忆丢失。
 3. **记账字段归脚本**：`first_seen/last_seen/seen_count/applied_count/applied_ok/status/escalated/superseded_by` 由脚本写入，禁止手写。
 4. **只标记不删除；升降级必审计**：冲突用 `supersedes` 标记而非删除；每次 escalate/demote 都会写 `escalation.log.jsonl`。
+5. **事实与经验分开存，事实过期不删值**：经验（怎么做事）进 entries，事实（是什么状态）进 `.retro/facts.json`；事实的 `status/first_seen/verified_at` 归脚本，验证失败标 stale、退役标 retired，值和历史永不删除，每次变更写 `facts.log.jsonl` 账本（含旧值）。
 
 ## 第一步：回顾本会话
 
@@ -30,6 +31,8 @@ description: Review the session at wrap-up and distill pitfalls and major discov
 - **被推翻的假设**：一开始以为是 X，后来发现其实是 Y
 - **稳定奏效的策略**：多次验证有效的排查路径/修复模式/自验方法（如「改样式先查 transition」「DOM 重依赖用 jiti 自验」）——成功模式与失败模式同样值得沉淀，tag 打 `success` 而非 `pitfall`，audit 时不会进失效候选
 
+信号里若含**当前状态型事实**（见「项目事实」一节的收录标准），在写经验条目之外同时登记 facts。
+
 ## 收录门槛
 
 同时满足三条才收录：
@@ -38,7 +41,7 @@ description: Review the session at wrap-up and distill pitfalls and major discov
 2. **非显而易见** —— 操作性标准：「本项目内实际踩坑且被 review/用户纠正过」；不是看代码或文档就能直接得出的
 3. **跨会话有效** —— 不是本会话一次性的事务细节
 
-不收录：任务进度细节（那是 handoff 技能的职责）、代码里一眼可见的事实、未经本项目验证的泛泛最佳实践。**特别地：本会话中从 `.retro/` 旧条目或 AGENTS.md 规则读到的内容不算新经验**——那是已有知识的复用，写入 log 会污染「这条经验被踩过几次」的统计（WikiSkill 消融实验的教训：知识来源被污染会降低数据对技能开发的诊断价值）。回顾完若没有值得沉淀的，直接告诉用户「本次没有值得沉淀的经验」，不要硬凑——这是正常结果，不是失败。
+不收录：任务进度细节（那是 handoff 技能的职责）、代码里一眼可见的事实、未经本项目验证的泛泛最佳实践。**特别地：本会话中从 `.retro/` 旧条目、`facts.json` 或 AGENTS.md 规则读到的内容不算新经验**——那是已有知识的复用，写入 log 会污染「这条经验被踩过几次」的统计（WikiSkill 消融实验的教训：知识来源被污染会降低数据对技能开发的诊断价值）。但**重新实测确认某事实值未变**是有价值的：`fact add` 同 key 同值登记（touch）即可刷新 verified_at，不算新经验也不产生新条目。回顾完若没有值得沉淀的，直接告诉用户「本次没有值得沉淀的经验」，不要硬凑——这是正常结果，不是失败。
 
 ## 第二步：写入
 
@@ -52,6 +55,7 @@ description: Review the session at wrap-up and distill pitfalls and major discov
 <原文摘录，尽可能保留可复用信息>
 
 > entry: 20260824-001        # 本次会话产生了该条目（挂接条目 id）
+> fact: build.test-cmd       # 本段落同时登记了该事实（可选，挂接 fact key）
 > seen-again: 20260824-002   # 旧事重提（seen_count 的确定性依据）
 > applied: 20260824-001 ok   # 本会话实际采用了该条目的解法且有效
 ```
@@ -93,6 +97,39 @@ supersedes: null         # 或旧条目 id（本条推翻了旧条目）
 
 脚本自动补全：`id 校验`、`first_seen/last_seen/seen_count`、`applied_count/applied_ok`、`status`（new→verified/needs_review/superseded）、`escalated`、`superseded_by`。
 
+## 项目事实（facts）
+
+经验回答「怎么做事、为什么」；事实回答「现在是什么状态」——构建/测试命令、关键路径、类名/选择器、端口、版本、数字限制。事实存 `.retro/facts.json`，未来会话**精确查询一步取值，零推理**。
+
+### 收录标准
+
+- **收**：agent 未来需要用「当前值」的客观状态——每次干活都可能查的（测试命令）、文档没写或翻了很久才发现的（隐藏类名、可达域名、有效期数字）。
+- **不收**：历史测量型数字（如「实测 0/1074 放对」）——那是论证证据，留在经验条目正文里；一眼可查且不变的（入口文件名）；一次性事务细节。
+- 同一发现可以「一鱼两吃」：经验条目记判断和解法，事实库记状态值；条目正文引用 key 而非写死值（如「活跃 tab 类名见 fact ui.class.active-tab」），避免值过期拖累经验条目。
+
+### key 规范
+
+至少两段、全小写字母/数字/连字符，按领域取前缀：`build.` `env.` `ui.` `paths.` `api.` `data.`（前缀是建议非强制，保证互不覆盖即可）。
+
+### 登记 / 更新
+
+```bash
+retro.py --root <项目目录> fact add <key> <value> [--source "来源"] [--verify-cmd "断言命令"] [--ref log/YYYY-MM-DD.md#sN] [--reason "变更理由"]
+```
+
+- `fact add` 是新增+更新合一：key 已存在则更新，旧值自动入账本。
+- `--verify-cmd` 尽量配：一条**只读、可重跑、退出码 0 表通过**的断言（如 grep 文件内容、检查端口、比对版本）。check 时脚本自动执行：失败标 stale（值仍可查但带过期警告），恢复自动转回 active。写不出的留给审计轮人工复核。
+- 退役（功能下线/不再相关）：`fact retire <key> --reason "..."`，值不删除。
+
+### 查询（干活时用，非沉淀时）
+
+```bash
+retro.py --root <项目目录> fact get <key>     # 精确取值；stale 会给过期警告
+retro.py --root <项目目录> fact list [--prefix build.] [--status active]
+```
+
+INDEX.md 头部有 facts 概况行提示库里有什么。agent 在本项目中需要客观状态时，先查 facts 再去翻源文件——尤其找得很久才发现过的信息。
+
 ## 迁移旧结构到 log/entries
 
 旧结构（按主题拆分文件、手工维护 INDEX）升级到本结构的步骤：
@@ -109,11 +146,12 @@ id 分配规则：`YYYYMMDD-NNN`，NNN 为当日已有最大序号 +1（3 位补
 
 | 子命令 | 作用 | 是否写 |
 |---|---|---|
-| `index` | 补齐派生字段、重建 INDEX.md | 写 |
-| `check` | 校验一致性（含状态回归）；含 error 退出 1 | 写 status |
-| `stats` | 统计（条目/状态/seen_top/tag/applied/INDEX 体量/规则数），零 LLM | 只读 |
+| `index` | 补齐派生字段、重建 INDEX.md（含 facts 概况行） | 写 |
+| `check` | 校验一致性（含状态回归；facts 的 verify_cmd 机械验证，失败标 stale）；含 error 退出 1 | 写 status/facts |
+| `stats` | 统计（条目/状态/seen_top/tag/applied/INDEX 体量/规则数/facts），零 LLM | 只读 |
 | `escalate` | 列候选（硬门槛：seen_count≥2 或 applied_ok≥1）/ `--apply ID...` 升级 / `--force` 绕过 seen_count≥2 门槛（仅限迁移/紧急场景，审计记录 force:true）/ `--demote ID...` 降级 | 写 |
 | `reconcile` | 检查 AGENTS.md 与条目 escalated 的漂移 | 只读 |
+| `fact` | 项目事实存取：`add` 登记/更新（旧值入账本）/ `get` 精确查询 / `list` 过滤列表 / `retire --reason` 退役 | 写（add/retire） |
 | `audit` | 审计轮：六区块只读报告（健康/升级/降级/失效/合并候选/审计状态）；`--close "总结" [--dismissed id1,id2]` 落账本轮审计 | 只读/追加 |
 
 > `check` 会自动写回 status（new→verified/needs_review/superseded 回归），这是脚本管辖派生字段的正常行为，**不写审计日志**。审计日志（`escalation.log.jsonl`）只记录人为升降级决策（`escalate --apply`/`--demote`）。
@@ -221,4 +259,4 @@ Git Bash 路径必须用正斜杠。
 
 ## 最后：向用户汇报
 
-一两句话说明：沉淀了几条、合并还是新建了哪些主题、是否有条目升级到了 AGENTS.md。不要贴出全部文件内容。
+一两句话说明：沉淀了几条、合并还是新建了哪些主题、登记/更新了哪些事实（有 stale 的要点名提醒）、是否有条目升级到了 AGENTS.md。不要贴出全部文件内容。

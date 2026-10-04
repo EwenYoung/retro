@@ -606,3 +606,218 @@ def test_success_tag_in_vocabulary(tmp_path, capsys):
     assert rc == 0
     assert "词表外" not in out
     assert "[warnings] 0" in out
+
+
+# ---------------------------------------------------------------- facts（项目事实）
+
+
+def read_facts(root):
+    return json.loads((root / ".retro" / "facts.json").read_text(encoding="utf-8"))["facts"]
+
+
+def read_fact_log(root):
+    lines = (root / ".retro" / "facts.log.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    return [json.loads(x) for x in lines]
+
+
+def test_fact_add_creates_file_and_ledger(tmp_path, capsys):
+    """add 新增：facts.json 结构完整 + 账本 add 行 + get/list 可查。"""
+    root = tmp_path
+    rc, out = capture(root, capsys, "fact", "add", "build.test-cmd", "pnpm test",
+                      "--source", "package.json scripts.test")
+    assert rc == 0
+    facts = read_facts(root)
+    rec = facts["build.test-cmd"]
+    assert rec["value"] == "pnpm test"
+    assert rec["status"] == "active"
+    assert rec["provenance"] == "package.json scripts.test"
+    assert rec["verify_cmd"] is None
+    log = read_fact_log(root)
+    assert log[-1]["op"] == "add" and log[-1]["key"] == "build.test-cmd"
+
+    rc, out = capture(root, capsys, "fact", "get", "build.test-cmd")
+    assert rc == 0 and "pnpm test" in out
+
+    rc, out = capture(root, capsys, "fact", "list")
+    assert rc == 0 and "build.test-cmd" in out and "pnpm test" in out
+
+
+def test_fact_add_update_preserves_old_value_in_ledger(tmp_path, capsys):
+    """add 更新值：账本 update 行必须带 old_value（旧值不丢失）。"""
+    root = tmp_path
+    run(root, "fact", "add", "env.port", "3000")
+    rc, out = capture(root, capsys, "fact", "add", "env.port", "3001", "--reason", "端口改了")
+    assert rc == 0 and "3000 -> 3001" in out
+    log = read_fact_log(root)
+    upd = [e for e in log if e["op"] == "update"]
+    assert len(upd) == 1
+    assert upd[0]["old_value"] == "3000" and upd[0]["new_value"] == "3001"
+    assert upd[0]["reason"] == "端口改了"
+
+
+def test_fact_add_same_value_touch_not_update(tmp_path, capsys):
+    """同值重复 add：touch（幂等刷新），不产生 update。"""
+    root = tmp_path
+    run(root, "fact", "add", "build.cmd", "make")
+    rc, out = capture(root, capsys, "fact", "add", "build.cmd", "make")
+    assert rc == 0 and "值未变" in out
+    log = read_fact_log(root)
+    assert all(e["op"] != "update" for e in log)
+    assert log[-1]["op"] == "touch"
+
+
+def test_fact_add_keeps_old_metadata_when_not_passed(tmp_path, capsys):
+    """更新时未传 --source/--verify-cmd：保留旧元数据（不静默抹掉）。"""
+    root = tmp_path
+    run(root, "fact", "add", "ui.class.active-tab", "_31a22b0",
+        "--source", "实测 DOM", "--verify-cmd", "exit 0")
+    run(root, "fact", "add", "ui.class.active-tab", "_abc1234", "--reason", "官方改版")
+    rec = read_facts(root)["ui.class.active-tab"]
+    assert rec["value"] == "_abc1234"
+    assert rec["provenance"] == "实测 DOM"
+    assert rec["verify_cmd"] == "exit 0"
+
+
+def test_fact_key_syntax_rejected(tmp_path):
+    """非法 key（大写/单段/空格）被拒绝且不写文件。"""
+    root = tmp_path
+    assert run(root, "fact", "add", "BadKey", "x") == 1
+    assert run(root, "fact", "add", "single", "x") == 1
+    assert run(root, "fact", "add", "bad key", "x") == 1
+    assert not (root / ".retro" / "facts.json").exists()
+
+
+def test_fact_get_missing(tmp_path, capsys):
+    """get 不存在的 key：rc 1。"""
+    root = tmp_path
+    rc, out = capture(root, capsys, "fact", "get", "no.such-key")
+    assert rc == 1 and "不存在" in out
+
+
+def test_fact_list_filters(tmp_path, capsys):
+    """list 按前缀与状态过滤。"""
+    root = tmp_path
+    capture(root, capsys, "fact", "add", "build.cmd", "make")
+    capture(root, capsys, "fact", "add", "env.port", "3000")
+    rc, out = capture(root, capsys, "fact", "list", "--prefix", "env.")
+    assert rc == 0 and "env.port" in out and "build.cmd" not in out
+    rc, out = capture(root, capsys, "fact", "list", "--status", "stale")
+    assert rc == 0 and "无匹配" in out
+
+
+def test_fact_retire_and_reactivate(tmp_path, capsys):
+    """retire 显式退役 + 账本；再 add 同 key 回 active（值新但状态不再矛盾）。"""
+    root = tmp_path
+    run(root, "fact", "add", "build.cmd", "make")
+    rc, out = capture(root, capsys, "fact", "retire", "build.cmd", "--reason", "下线")
+    assert rc == 0
+    assert read_facts(root)["build.cmd"]["status"] == "retired"
+    log = read_fact_log(root)
+    assert log[-1]["op"] == "retire" and log[-1]["reason"] == "下线"
+
+    rc, out = capture(root, capsys, "fact", "add", "build.cmd", "make2")
+    assert rc == 0
+    rec = read_facts(root)["build.cmd"]
+    assert rec["status"] == "active" and rec["value"] == "make2"
+    log = read_fact_log(root)
+    assert any(e["op"] == "reactivate" for e in log)
+
+
+def test_check_verify_fail_marks_stale_then_recovers(tmp_path, capsys):
+    """check 机械验证：失败 → stale + warning + 账本；恢复 → reactivate。
+
+    状态迁移会改变 INDEX facts 概况行，因此按既有模型需要重跑 index
+    （与 entries 状态变化后 INDEX 过期的行为一致）。
+    """
+    root = tmp_path
+    run(root, "fact", "add", "env.node", "22", "--verify-cmd", "exit 0")
+    assert run(root, "index") == 0
+    rc, out = capture(root, capsys, "check")
+    assert rc == 0 and "CHECK PASSED" in out
+    assert read_facts(root)["env.node"]["status"] == "active"
+
+    # 断言改为必失败 → check 标 stale（warning，非 error）
+    run(root, "fact", "add", "env.node", "22", "--verify-cmd", "exit 1")
+    assert run(root, "index") == 0
+    rc, out = capture(root, capsys, "check")
+    assert "已标 stale" in out
+    assert read_facts(root)["env.node"]["status"] == "stale"
+    log = read_fact_log(root)
+    assert log[-1]["op"] == "stale" and log[-1]["old_status"] == "active"
+    # stale 后 get 有过期警告
+    rc, out = capture(root, capsys, "fact", "get", "env.node")
+    assert rc == 0 and "stale" in out and "可能已过期" in out
+
+    # 断言恢复 → check 自动 reactivate
+    run(root, "fact", "add", "env.node", "22", "--verify-cmd", "exit 0")
+    assert run(root, "index") == 0
+    rc, out = capture(root, capsys, "check")
+    assert rc == 0 and "CHECK PASSED" in out
+    rec = read_facts(root)["env.node"]
+    assert rec["status"] == "active"
+    assert any(e["op"] == "reactivate" for e in read_fact_log(root))
+
+
+def test_check_fact_without_verify_cmd_untouched(tmp_path, capsys):
+    """无 verify_cmd 的事实：check 不验证不改状态（留给审计轮）。"""
+    root = tmp_path
+    run(root, "fact", "add", "ui.entry.point", "三点菜单")
+    assert run(root, "index") == 0
+    rc, out = capture(root, capsys, "check")
+    assert rc == 0 and "CHECK PASSED" in out
+    assert read_facts(root)["ui.entry.point"]["status"] == "active"
+    assert all(e["op"] not in ("stale", "reactivate") for e in read_fact_log(root))
+
+
+def test_check_fact_structure_error(tmp_path, capsys):
+    """facts.json 结构损坏（value 空）：check 报 error，rc 1。"""
+    root = tmp_path
+    (root / ".retro").mkdir(parents=True)
+    (root / ".retro" / "facts.json").write_text(
+        '{"facts": {"build.cmd": {"value": "", "status": "active"}}}', encoding="utf-8")
+    rc, out = capture(root, capsys, "check")
+    assert rc == 1
+    assert "value 缺失或为空" in out
+
+
+def test_index_includes_facts_line_and_zero_impact_without_facts(tmp_path):
+    """INDEX 概况行：有 facts 时加入第二行；无 facts 时不加（既有项目零影响）。"""
+    root = tmp_path
+    write_log(root, ["## s1 段落\n\n> entry: %s\n" % EID])
+    write_entry(root, base_fm(), "结论句。\n")
+    write_agents(root)
+    assert run(root, "index") == 0
+    index_raw = (root / ".retro" / "INDEX.md").read_text(encoding="utf-8")
+    assert "facts:" not in index_raw  # 无 facts：不加行，与旧行为完全一致
+
+    run(root, "fact", "add", "build.cmd", "make")
+    run(root, "fact", "add", "env.port", "3000")
+    assert run(root, "index") == 0
+    index_raw = (root / ".retro" / "INDEX.md").read_text(encoding="utf-8")
+    assert "<!-- facts: 2 active / 0 stale / 0 retired" in index_raw
+    assert run(root, "check") == 0
+
+
+def test_stats_reports_facts(tmp_path, capsys):
+    """stats 输出 facts 统计（含无机械验证条数）。"""
+    root = tmp_path
+    run(root, "fact", "add", "build.cmd", "make", "--verify-cmd", "exit 0")
+    run(root, "fact", "add", "ui.entry", "菜单")
+    rc, out = capture(root, capsys, "stats")
+    assert rc == 0
+    assert "facts: 2 条" in out
+    assert "active 2 / stale 0 / retired 0" in out
+    assert "facts 无机械验证（无 verify_cmd）: 1 条" in out
+
+
+def test_check_existing_projects_unaffected(tmp_path, capsys):
+    """无 facts 的既有项目：check/stats/index 行为不变（回归保障）。"""
+    root = tmp_path
+    write_log(root, ["## s1 段落\n\n> entry: %s\n" % EID])
+    write_entry(root, base_fm(), "结论句。\n")
+    write_agents(root)
+    assert run(root, "index") == 0
+    rc, out = capture(root, capsys, "check")
+    assert rc == 0 and "CHECK PASSED" in out
+    rc, out = capture(root, capsys, "stats")
+    assert rc == 0 and "facts:" not in out.split("=== retro stats ===")[1].split("INDEX.md")[0]
